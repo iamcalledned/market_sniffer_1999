@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: 24px;">
+
+  <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h2 style="font-size: 20px; font-weight: 600; color: var(--text-bright);">Chartable Assets & Metrics</h2>
+      <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Select any metric, instrument, or macroeconomic series below to view its historical trend.</p>
+    </div>
+    <a href="{{ url_for('dashboard.index') }}" class="btn">Back to Dashboard</a>
+  </div>
+
+  <!-- Metric Categories -->
+  {% for cat_id, cat_name in category_labels.items() %}
+    <div class="market-panel" style="margin-bottom: 0;">
+      <div class="market-panel-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 12px;">
+        <h3 style="font-size: 16px; font-weight: 600; color: var(--text-bright);">{{ cat_name }}</h3>
+      </div>
+      
+      <table class="metric-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Code</th>
+            <th>Description</th>
+            <th style="text-align: right; width: 120px;">Latest Value</th>
+            <th style="text-align: right; width: 80px;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for metric in grouped_metrics[cat_id] %}
+            <tr>
+              <td style="font-weight: 500; color: var(--color-blue);">
+                <a href="{{ url_for('charts.show_metric', metric_code=metric.code) }}">{{ metric.plain_label }}</a>
+              </td>
+              <td class="metric-code-cell">{{ metric.code }}</td>
+              <td style="color: var(--text-muted); font-size: 12px;">{{ metric.short_description }}</td>
+              <td class="metric-value-cell">{{ metric.latest_value }} <span style="font-size: 10px; color: var(--text-muted); font-weight: normal;">({{ metric.as_of }})</span></td>
+              <td style="text-align: right;">
+                <a href="{{ url_for('charts.show_metric', metric_code=metric.code) }}" class="btn" style="font-size: 11px; padding: 2px 8px;">Chart</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+
+  <!-- Extra DB Assets (Instruments and FRED Series) -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+    <!-- Instruments -->
+    <div class="market-panel" style="margin-bottom: 0;">
+      <div class="market-panel-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 12px;">
+        <h3 style="font-size: 15px; font-weight: 600; color: var(--text-bright);">Instruments (Close Price)</h3>
+      </div>
+      <ul style="list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+        {% for inst in instruments %}
+          <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 4px;">
+            <div>
+              <strong style="color: var(--text-bright);">{{ inst.symbol }}</strong> 
+              <span style="color: var(--text-muted); margin-left: 6px;">{{ inst.name }}</span>
+            </div>
+            <a href="{{ url_for('charts.show_instrument', symbol=inst.symbol) }}" class="btn" style="font-size: 11px; padding: 2px 8px;">Chart</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <!-- FRED Series -->
+    <div class="market-panel" style="margin-bottom: 0;">
+      <div class="market-panel-header" style="border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 12px;">
+        <h3 style="font-size: 15px; font-weight: 600; color: var(--text-bright);">FRED Economic Series</h3>
+      </div>
+      <ul style="list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 13px; max-height: 400px; overflow-y: auto; padding-right: 4px;">
+        {% for ser in series %}
+          <li style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.03); padding-bottom: 4px;">
+            <div style="max-width: 70%;">
+              <strong style="color: var(--text-bright);">{{ ser.series_code }}</strong>
+              <div style="color: var(--text-muted); font-size: 11px; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">{{ ser.display_name }}</div>
+            </div>
+            <a href="{{ url_for('charts.show_series', series_code=ser.series_code) }}" class="btn" style="font-size: 11px; padding: 2px 8px;">Chart</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

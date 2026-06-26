@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: 20px;">
+  
+  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+    <div>
+      <h2 style="font-size: 20px; font-weight: 600; color: var(--text-bright);">FRED Series: {{ series_code }}</h2>
+      <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ display_name }}</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <a href="{{ url_for('charts.index') }}" class="btn">All Charts</a>
+      <a href="{{ url_for('dashboard.index') }}" class="btn">Back to Dashboard</a>
+    </div>
+  </div>
+
+  <div class="confidence-stats" style="margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
+    <div class="confidence-stat-item">
+      <div>Latest Value</div>
+      <div style="font-size: 22px; font-weight: 700; color: var(--color-blue); margin-top: 4px;">
+        {{ current_value }}
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Historical Window</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">
+        {{ date_range }}
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Data Source</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">
+        FRED (Federal Reserve Economic Data)
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Data Quality</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px; color: var(--color-green);">
+        {{ quality_note }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Server-rendered inline SVG Chart container -->
+  <div class="chart-container" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 20px;">
+    {{ svg_chart | safe }}
+  </div>
+
+  <div style="background-color: rgba(248, 81, 73, 0.05); border: 1px solid rgba(248, 81, 73, 0.15); border-radius: 6px; padding: 12px; font-size: 12px; color: var(--text-muted);">
+    <strong>Disclaimer:</strong> {{ interpretation_limits }}
+  </div>
+
+</div>
+{% endblock %}

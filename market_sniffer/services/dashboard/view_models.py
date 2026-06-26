@@ -76,8 +76,15 @@ class TechnicalAppendixViewModel:
 
 
 @dataclass
+class StartHereViewModel:
+    intro_text: str
+    bullet_points: list[str]
+
+
+@dataclass
 class DashboardViewModel:
     header: HeaderViewModel
+    start_here: StartHereViewModel
     market_brief: MarketBriefViewModel
     key_market_strip: list[KPITile]
     what_changed: list[dict[str, Any]]

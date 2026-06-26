@@ -20,6 +20,7 @@ from market_sniffer.services.dashboard.view_models import (
     MetricRow,
     PanelViewModel,
     QualityGroup,
+    StartHereViewModel,
     TechnicalAppendixViewModel,
 )
 from market_sniffer.services.metric_registry import load_metric_registry
@@ -341,7 +342,7 @@ class DashboardService:
                     unit="unknown",
                     source="Unknown",
                     as_of="N/A",
-                    chart_link=f"/charts/{k}",
+                    chart_link=f"/charts/metric/{k}",
                 )
             obs, unit, disp_name, _cat = latest_obs[k]
             return MetricRow(
@@ -351,7 +352,7 @@ class DashboardService:
                 unit=unit,
                 source=self.get_source_label(k),
                 as_of=obs.as_of_date.strftime("%Y-%m-%d"),
-                chart_link=f"/charts/{k}",
+                chart_link=f"/charts/metric/{k}",
             )
 
         # Panel 1: Trend & Structure
@@ -366,7 +367,7 @@ class DashboardService:
                 _build_row("market.spy_return_63d"),
                 _build_row("market.spy_distance_200d"),
             ],
-            chart_link="/charts/market.spy_distance_200d",
+            chart_link="/charts/metric/market.spy_distance_200d",
         )
 
         # Panel 2: Breadth & Leadership
@@ -382,7 +383,7 @@ class DashboardService:
                 _build_row("leadership.xlf_vs_spy_21d"),
                 _build_row("leadership.xle_vs_spy_21d"),
             ],
-            chart_link="/charts/breadth.tracked_above_50d_pct",
+            chart_link="/charts/metric/breadth.tracked_above_50d_pct",
         )
 
         # Panel 3: Rates & Credit
@@ -402,7 +403,7 @@ class DashboardService:
                 _build_row("credit.hy_oas"),
                 _build_row("credit.hy_oas_change_21d"),
             ],
-            chart_link="/charts/rates.ust_2s10s_spread",
+            chart_link="/charts/metric/credit.hy_oas",
         )
 
         # Panel 4: Volatility & Cross-Asset
@@ -425,7 +426,7 @@ class DashboardService:
                 _build_row("macro.nfci_level"),
                 _build_row("macro.nfci_change_21d"),
             ],
-            chart_link="/charts/volatility.vix_level",
+            chart_link="/charts/metric/volatility.vix_level",
         )
 
         market_map = [panel1, panel2, panel3, panel4]
@@ -536,8 +537,19 @@ class DashboardService:
             yahoo_note="Yahoo quotes are used strictly for manual, explicit user-triggered symbol lookups and are not polled or used as the source of truth for the dashboard.",
         )
 
+        start_here = StartHereViewModel(
+            intro_text="Welcome to Market Sniffer 2000. This server provides clean, professional financial analytics by serving locally persisted warehouse metrics.",
+            bullet_points=[
+                "Read-only dashboard rendering: The main page runs local warehouse queries without calling external APIs.",
+                "Server-rendered SVG charting: Dive into detailed trends for any metric, instrument, or FRED series.",
+                "Yahoo Quote Lookup: Perform explicit manual ticker queries and persist snapshots to the database.",
+                "Strict decoupling: Architecture is cleanly isolated from future forecasting or recommendation modules."
+            ]
+        )
+
         return DashboardViewModel(
             header=header,
+            start_here=start_here,
             market_brief=market_brief,
             key_market_strip=key_market_strip,
             what_changed=what_changed,

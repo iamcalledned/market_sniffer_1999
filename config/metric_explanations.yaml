@@ -1,0 +1,140 @@
+explanations:
+  market.spy_close:
+    plain_label: "SPY Close Price"
+    short_description: "The daily closing price of the SPDR S&P 500 ETF Trust."
+    why_it_matters: "SPY tracks the S&P 500 and is the primary proxy for large-cap US equities."
+    what_it_does_not_mean: "It is not an indicator of value by itself, nor a prediction of tomorrow's price."
+    good_to_know: "Prices are split and dividend adjusted canonical market bars."
+
+  market.spy_return_5d:
+    plain_label: "SPY 5-Day Return"
+    short_description: "Percentage change in SPY close price over the last 5 trading days."
+    why_it_matters: "Measures short-term market momentum and direction."
+    what_it_does_not_mean: "It is not a signal that a correction or rally is ending."
+    good_to_know: "Calculated using the ratio of current close to close 5 trading days ago."
+
+  market.spy_return_21d:
+    plain_label: "SPY 21-Day Return"
+    short_description: "Percentage change in SPY close price over the last 21 trading days (roughly one calendar month)."
+    why_it_matters: "Provides a medium-term reading of equity market momentum."
+    what_it_does_not_mean: "Does not guarantee that the trend will persist."
+    good_to_know: "Used as a standard benchmark for monthly performance evaluations."
+
+  market.spy_return_63d:
+    plain_label: "SPY 63-Day Return"
+    short_description: "Percentage change in SPY close price over the last 63 trading days (roughly one quarter)."
+    why_it_matters: "Indicates intermediate-term performance and trend strength."
+    what_it_does_not_mean: "It is not a leading indicator of macroeconomic growth."
+    good_to_know: "A positive 63-day return often correlates with broad market trend support."
+
+  market.spy_distance_200d:
+    plain_label: "SPY Distance from 200-Day Average"
+    short_description: "The ratio of the current SPY price relative to its 200-day simple moving average."
+    why_it_matters: "Identifies whether the market is extended above or below its long-term average."
+    what_it_does_not_mean: "It is not a buy or sell signal by itself."
+    good_to_know: "Large distances can persist for weeks or months in strong bull or bear runs."
+
+  breadth.tracked_above_50d_pct:
+    plain_label: "Breadth Above 50-Day Average"
+    short_description: "The percentage of index components trading above their 50-day simple moving averages."
+    why_it_matters: "Gauges the short-term participation of individual stocks in market trends."
+    what_it_does_not_mean: "It is not a signal that the market is overbought or oversold."
+    good_to_know: "High breadth indicates a healthy, broad-based rally."
+
+  breadth.tracked_above_200d_pct:
+    plain_label: "Breadth Above 200-Day Average"
+    short_description: "The percentage of index components trading above their 200-day simple moving averages."
+    why_it_matters: "Measures long-term health and structural strength of the equity market."
+    what_it_does_not_mean: "Does not mean a market crash is imminent if it starts to turn down."
+    good_to_know: "Sustained high values confirm a strong long-term bull market."
+
+  volatility.vix_level:
+    plain_label: "VIX Volatility Index Level"
+    short_description: "CBOE Volatility Index representing 30-day implied equity market volatility."
+    why_it_matters: "Commonly referred to as the 'fear index'; rises when market uncertainty increases."
+    what_it_does_not_mean: "It is not a direct measure of realized volatility."
+    good_to_know: "Values below 15 generally signify calm, while values above 20 indicate elevated risk."
+
+  volatility.vix_change_5d:
+    plain_label: "VIX 5-Observation Change"
+    short_description: "Absolute point change in the VIX level over five business observations."
+    why_it_matters: "Detects rapid spikes or declines in market stress levels."
+    what_it_does_not_mean: "A sudden rise does not guarantee a prolonged stock market crash."
+    good_to_know: "Sudden sharp increases are often associated with short-term panic."
+
+  credit.hy_oas:
+    plain_label: "High-Yield Option-Adjusted Spread"
+    short_description: "The spread between corporate high-yield bonds and US Treasuries (credit spread)."
+    why_it_matters: "Measures defaults risk premia. High spreads indicate risk aversion and credit stress."
+    what_it_does_not_mean: "It is not a stock valuation index."
+    good_to_know: "OAS adjustments account for embedded call options in high-yield debt."
+
+  credit.hy_oas_change_21d:
+    plain_label: "High-Yield OAS 21-Observation Change"
+    short_description: "Percentage point change in the high-yield credit spread over 21 observations."
+    why_it_matters: "Tracks acceleration in credit market stress or cooling."
+    what_it_does_not_mean: "A minor increase does not mean a credit crunch is beginning."
+    good_to_know: "Rapid widening of corporate spreads often precedes equity market corrections."
+
+  rates.ust_2s10s_spread:
+    plain_label: "2-Year / 10-Year Treasury Yield Spread"
+    short_description: "Difference between the yields of 10-year and 2-year US Treasury notes."
+    why_it_matters: "Key yield curve indicator. An inverted curve (less than 0) often precedes recessions."
+    what_it_does_not_mean: "It is not a timing indicator for the exact start of a downturn."
+    good_to_know: "Inversions occur when investors demand higher yield for short-term risk than long-term."
+
+  rates.ust_3m10y_spread:
+    plain_label: "3-Month / 10-Year Treasury Yield Spread"
+    short_description: "Difference between the yields of 10-year and 3-month US Treasury bills."
+    why_it_matters: "Considered by many economists as a highly reliable recession predictor when inverted."
+    what_it_does_not_mean: "An inversion does not mean economic contraction begins immediately."
+    good_to_know: "Historically, inversions lead economic recessions by 6 to 18 months."
+
+  leadership.xlk_vs_spy_21d:
+    plain_label: "Technology vs SPY Relative Return"
+    short_description: "The 21-day relative performance of the Technology sector (XLK) versus SPY."
+    why_it_matters: "Tracks sector leadership. Strong performance indicates growth-led market regimes."
+    what_it_does_not_mean: "It is not a signal that Tech shares are overvalued."
+    good_to_know: "Calculated as: Tech 21d Return minus SPY 21d Return."
+
+  leadership.xlf_vs_spy_21d:
+    plain_label: "Financials vs SPY Relative Return"
+    short_description: "The 21-day relative performance of the Financial sector (XLF) versus SPY."
+    why_it_matters: "Shows financial market participation. Financials tend to lead in high-rate or cyclical expansions."
+    what_it_does_not_mean: "Does not represent banking system security or health by itself."
+    good_to_know: "Calculated as: Financials 21d Return minus SPY 21d Return."
+
+  leadership.xle_vs_spy_21d:
+    plain_label: "Energy vs SPY Relative Return"
+    short_description: "The 21-day relative performance of the Energy sector (XLE) versus SPY."
+    why_it_matters: "Indicates commodities participation. Energy often outperforms during inflationary cycles."
+    what_it_does_not_mean: "It is not a forecast of global crude oil prices."
+    good_to_know: "Calculated as: Energy 21d Return minus SPY 21d Return."
+
+  leadership.ai_infra_vs_spy_21d:
+    plain_label: "AI Infrastructure vs SPY Relative Return"
+    short_description: "The 21-day relative performance of a custom basket of AI Infrastructure stocks versus SPY."
+    why_it_matters: "Measures investor demand for semiconductor, electrical equipment, and data center firms."
+    what_it_does_not_mean: "It is not a recommendation for artificial intelligence stocks."
+    good_to_know: "Basket components are defined in the project metric registry."
+
+  cross_asset.gold_vs_spy_21d:
+    plain_label: "GLD versus SPY 21-Day Relative Return"
+    short_description: "The 21-day relative performance of Gold ETF (GLD) versus SPY."
+    why_it_matters: "Measures risk aversion. Gold tends to outperform during geopolitical stress or inflation fears."
+    what_it_does_not_mean: "Does not mean global currencies are collapsing."
+    good_to_know: "Calculated as: GLD 21d Return minus SPY 21d Return."
+
+  macro.nfci_level:
+    plain_label: "National Financial Conditions Index"
+    short_description: "Chicago Fed index measuring financial conditions in money, debt, and equity markets."
+    why_it_matters: "Aggregates 105 indicators. Values below zero indicate loose financial conditions; above zero means tight."
+    what_it_does_not_mean: "It is not a measure of interest rates alone."
+    good_to_know: "Loose conditions support risk assets; tight conditions tend to restrict credit."
+
+  macro.nfci_change_21d:
+    plain_label: "NFCI 21-Observation Change"
+    short_description: "Absolute index change in the NFCI over 21 observations."
+    why_it_matters: "Signals speed of tightening or easing in macroeconomic liquidity."
+    what_it_does_not_mean: "It is not a short-term indicator of monetary policy."
+    good_to_know: "A positive change indicates conditions are becoming tighter."

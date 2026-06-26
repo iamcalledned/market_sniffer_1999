@@ -10,6 +10,7 @@
   <div class="container">
     <nav class="nav-bar">
       <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('charts.index') }}" class="{% if request.blueprint == 'charts' %}active{% endif %}">Charts</a>
       <a href="{{ url_for('quotes.lookup_form') }}" class="{% if request.blueprint == 'quotes' %}active{% endif %}">Yahoo Quote Lookup</a>
     </nav>
     

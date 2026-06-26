@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: 20px;">
+  
+  <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 10px;">
+    <div>
+      <h2 style="font-size: 20px; font-weight: 600; color: var(--text-bright);">{{ plain_label }}</h2>
+      <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">{{ short_description }}</p>
+      <div style="font-family: monospace; font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+        Metric Code: {{ metric_code }}
+      </div>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <a href="{{ url_for('charts.index') }}" class="btn">All Charts</a>
+      <a href="{{ url_for('dashboard.index') }}" class="btn">Back to Dashboard</a>
+    </div>
+  </div>
+
+  <div class="confidence-stats" style="margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px;">
+    <div class="confidence-stat-item">
+      <div>Current Calculated Value</div>
+      <div style="font-size: 22px; font-weight: 700; color: var(--color-blue); margin-top: 4px;">
+        {{ current_value }}
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Historical Window</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">
+        {{ date_range }}
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Data Source</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px;">
+        {{ source }}
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Data Quality</div>
+      <div style="font-size: 14px; font-weight: 600; margin-top: 4px; color: var(--color-green);">
+        {{ quality_note }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Server-rendered inline SVG Chart container -->
+  <div class="chart-container" style="background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; padding: 20px;">
+    {{ svg_chart | safe }}
+  </div>
+
+  <!-- Explanations & Disclaimers -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+    <div class="market-panel" style="margin-bottom: 0; padding: 16px;">
+      <h3 style="font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px;">Why It Matters</h3>
+      <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5;">{{ why_it_matters }}</p>
+    </div>
+
+    <div class="market-panel" style="margin-bottom: 0; padding: 16px;">
+      <h3 style="font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px;">What It Does Not Mean</h3>
+      <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5;">{{ what_it_does_not_mean }}</p>
+    </div>
+
+    <div class="market-panel" style="margin-bottom: 0; padding: 16px; grid-column: 1 / -1;">
+      <h3 style="font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px;">Good to Know</h3>
+      <p style="color: var(--text-muted); font-size: 13px; line-height: 1.5;">{{ good_to_know }}</p>
+    </div>
+  </div>
+
+  <div style="background-color: rgba(248, 81, 73, 0.05); border: 1px solid rgba(248, 81, 73, 0.15); border-radius: 6px; padding: 12px; font-size: 12px; color: var(--text-muted);">
+    <strong>Disclaimer:</strong> {{ interpretation_limits }}
+  </div>
+
+</div>
+{% endblock %}

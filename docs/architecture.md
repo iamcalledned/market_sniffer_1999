@@ -60,3 +60,11 @@ Flask App Factory (create_app)
 - **Service Layer**: Decouples business logic from endpoints. Handles data clustering, quality status evaluations, and symbol validations.
 - **Server-Rendered SVG Charts**: Serves line charts using pure, dependency-free SVGs dynamically built from historical data points, ensuring zero client-side framework requirements.
 
+## Future Intelligence Boundaries
+
+To maintain high data integrity and separate core historical warehousing from predictive models, future intelligence capabilities are strictly isolated:
+- **Recommendations & Stock Picking**: Scoped to `market_sniffer/services/recommendations/`. This module is entirely inactive in the current phase.
+- **Forecasting & Predictions**: Scoped to `market_sniffer/services/forecasting/`. This module is entirely inactive in the current phase.
+- **No Active Endpoints**: The web app exposes no active endpoints, routes, CLI subcommands, or service integrations for prediction or recommendations. All dashboard data remains purely descriptive, historical, and retrospective.
+
+
