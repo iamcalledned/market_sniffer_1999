@@ -11,7 +11,6 @@ from sqlalchemy import select
 
 from market_sniffer.db import models as m
 from market_sniffer.db.repository import WarehouseRepository
-from market_sniffer.services.registry_service import load_registry
 from market_sniffer.web.app import create_app
 
 
