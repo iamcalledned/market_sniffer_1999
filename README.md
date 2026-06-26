@@ -86,3 +86,31 @@ The default database path is `runtime/market_sniffer.sqlite3`, which is ignored 
 Yahoo historical validation is explicit through `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. Yahoo quote polling remains disabled by default through `YAHOO_QUOTES_ENABLED=false`.
 
 For the simple operator runbook, see [docs/HOW_TO_RUN_MARKET_SNIFFER.md](docs/HOW_TO_RUN_MARKET_SNIFFER.md).
+
+## Web Server & Professional Dashboard
+
+Market Sniffer 2000 includes a clean, professional financial dashboard served locally via a Flask web application.
+
+### Starting the Web Server
+
+To boot the local dashboard and API web server:
+
+```bash
+python -m market_sniffer.cli web serve --host 127.0.0.1 --port 8765
+```
+
+For offline development using simulated local data:
+
+```bash
+python -m market_sniffer.cli web serve --host 127.0.0.1 --port 8765 --fixture
+```
+
+Open `http://127.0.0.1:8765` in your browser.
+
+### Key Features & Design Boundaries
+
+1. **Read-Only Dashboard**: Rendering `GET /` queries local SQLite data only. It performs no database mutations, collector runs, or external API provider calls.
+2. **Interactive Charting**: Accessible via `/charts/<metric_code>` and backend coordinates APIs. Charts use inline server-rendered SVGs styled with a premium dark financial theme.
+3. **Yahoo Quote Lookup**: Allows validated, explicit single-symbol Yahoo quote fetches on-demand via `/quotes` and `/api/quotes/<symbol>`. Snapshot persistence requires an explicit user request.
+4. **Setup Troubleshooting**: When the database is uninitialized, missing data, or has uncalculated metrics, the web application renders clear diagnostic screens with copy-paste instructions.
+

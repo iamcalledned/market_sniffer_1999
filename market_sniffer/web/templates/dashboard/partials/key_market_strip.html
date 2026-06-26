@@ -1,0 +1,9 @@
+<section class="kpi-strip">
+  {% for tile in vm.key_market_strip %}
+    <div class="kpi-tile {% if tile.status != 'normal' %}{{ tile.status }}{% endif %}">
+      <div class="kpi-label">{{ tile.label }}</div>
+      <div class="kpi-value">{{ tile.value }}</div>
+      <div class="kpi-detail">{{ tile.detail }}</div>
+    </div>
+  {% endfor %}
+</section>

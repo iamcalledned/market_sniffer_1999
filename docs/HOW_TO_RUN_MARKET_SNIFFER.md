@@ -141,10 +141,34 @@ sqlite3 /home/ned/data/market_sniffer_1999/market_sniffer.sqlite3
 .quit
 ```
 
+## Serving the Web Dashboard
+
+To run the Flask web application locally and access the professional dashboard:
+
+```bash
+python -m market_sniffer.cli web serve --host 127.0.0.1 --port 8765
+```
+
+If you want to test the server without making external API requests, boot the server in fixture mode:
+
+```bash
+python -m market_sniffer.cli web serve --host 127.0.0.1 --port 8765 --fixture
+```
+
+### Navigating Web Features
+
+- **Dashboard**: Accessed via `http://127.0.0.1:8765/`. Displays the plain-English deterministic brief, KPI tiles, clustered evidence, and the 2x2 Market Map grid.
+- **Charts**: Click the chart icon (📊) in any panel row or navigate to `/charts/<metric_code>` to view historical line charts.
+- **Yahoo Quote Lookup**: Navigate to `/quotes` to perform a manual lookup of a ticker symbol.
+
 ## If Something Fails
 
 | Problem | First Command to Run | What It Usually Means |
 |---|---|---|
+| Web: Empty Database | `python -m market_sniffer.cli db init` | Database has not been initialized. |
+| Web: Data Missing | `python -m market_sniffer.cli backfill --profile core --months 24` | Historical daily bars and FRED observations are missing. |
+| Web: Metrics Missing | `python -m market_sniffer.cli metrics backfill --profile core` | Metric calculation runs have not been executed. |
+| Web: Evidence Missing | `python -m market_sniffer.cli evidence evaluate --as-of <date>` | Evidence evaluation needs to be run for the specified date. |
 | Missing API key | `python -m market_sniffer.cli validate-sources` | `.env` is missing `FRED_API_KEY` or `MASSIVE_API_KEY`/`POLYGON_API_KEY`. |
 | Massive entitlement or 403 | `python -m market_sniffer.cli validate-sources --live` | The key works, but the plan may not include the requested endpoint/history. |
 | FRED failure | `python -m market_sniffer.cli validate-sources --live` | The key, FRED availability, or a series endpoint needs checking. |

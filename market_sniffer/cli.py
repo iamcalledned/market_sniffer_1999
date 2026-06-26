@@ -525,6 +525,15 @@ def cmd_evidence(args: argparse.Namespace) -> int:
             }
             print(json.dumps(payload, indent=2, sort_keys=True, default=str))
             return 0
+        if args.evidence_command == "evaluate":
+            as_of = _parse_date(args.as_of)
+            if as_of is None:
+                print("evidence evaluate requires --as-of", file=sys.stderr)
+                return 2
+            service = MetricCalculationService(session, load_metric_registry())
+            res = service.calculate_date(as_of)
+            print(json.dumps(res, indent=2, sort_keys=True))
+            return 0
         if args.evidence_command == "summary":
             summary_start = _parse_date(args.date_from)
             summary_end = _parse_date(args.date_to)
@@ -557,6 +566,14 @@ def cmd_evidence(args: argparse.Namespace) -> int:
             )
             return 0
     return 2
+
+
+def cmd_web(args: argparse.Namespace) -> int:
+    from market_sniffer.web import create_app
+    app = create_app({"fixture": args.fixture})
+    app.run(host=args.host, port=args.port, debug=args.debug)
+    return 0
+
 
 
 def _print_evidence_rows(rows: Sequence[Any], limit: int) -> int:
@@ -762,7 +779,19 @@ def build_parser() -> argparse.ArgumentParser:
     evidence_summary = evidence_sub.add_parser("summary")
     evidence_summary.add_argument("--from", dest="date_from", required=True)
     evidence_summary.add_argument("--to", dest="date_to", required=True)
+    evidence_evaluate = evidence_sub.add_parser("evaluate")
+    evidence_evaluate.add_argument("--as-of", required=True)
     evidence.set_defaults(func=cmd_evidence)
+
+    web = sub.add_parser("web")
+    web_sub = web.add_subparsers(dest="web_command", required=True)
+    serve = web_sub.add_parser("serve")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument("--debug", action="store_true")
+    serve.add_argument("--fixture", action="store_true")
+    web.set_defaults(func=cmd_web)
+
     return parser
 
 

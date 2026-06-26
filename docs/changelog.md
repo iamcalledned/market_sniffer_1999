@@ -2,6 +2,13 @@
 
 ## 2026-06-26
 
+- Added Flask-based web application with clean factory pattern and Blueprint routing architecture.
+- Implemented professional dark-themed dashboard interface containing deterministic Market Brief, KPI strip, clustered evidence, 2x2 Market Map grid, and Data Confidence statistics.
+- Added server-rendered inline SVG charts for metrics, instruments, and FRED series.
+- Added explicit manual single-symbol Yahoo quote lookup with optional DB persistence.
+- Configured setup state error screens displaying copyable troubleshooting commands.
+- Documented canonical source precedence, web blueprints, and data boundaries.
+
 - Documented canonical source-specific bar versus canonical daily-bar design.
 - Documented FRED vintage insertion, latest-vintage selection, and point-in-time query semantics.
 - Documented completed-market-session default date behavior.

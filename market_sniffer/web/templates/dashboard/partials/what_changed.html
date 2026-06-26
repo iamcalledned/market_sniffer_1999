@@ -1,0 +1,15 @@
+<section class="what-changed-card">
+  <h2>What Changed (Curated Evidence)</h2>
+  {% if vm.what_changed %}
+    <div class="evidence-list">
+      {% for item in vm.what_changed %}
+        <div class="evidence-item {% if item.severity != 'info' %}{{ item.severity }}{% endif %}">
+          <div class="evidence-headline">{{ item.headline }}</div>
+          <div class="evidence-detail">{{ item.detail }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p style="color: var(--text-muted); font-size: 13px;">No evidence events captured in the last 14 days.</p>
+  {% endif %}
+</section>

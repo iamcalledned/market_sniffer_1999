@@ -41,3 +41,22 @@ Validation policy lives in `config/collection_profiles.yaml`. Current comparison
 FRED observations retain `realtime_start`, `realtime_end`, retrieval timestamp, raw payload, raw observation, quality status, and `is_latest_vintage`. New vintages are inserted separately; older vintages are not overwritten.
 
 Repository methods support current-view reads and point-in-time reads so future historical analysis can avoid revised values unavailable at the requested date.
+
+## Web Application & Services Architecture
+
+The web application layer separates routing logic, formatting, and data retrieval into distinct layers.
+
+```text
+Flask App Factory (create_app)
+  -> Blueprints (dashboard_bp, quotes_bp, charts_bp, api_bp)
+  -> Service Layer (DashboardService, YahooQuoteService)
+  -> Data Presentation (View Models & Formatters)
+  -> Inline SVG Rendering (Chart Service)
+  -> Database Repository (WarehouseRepository)
+```
+
+- **Flask App Factory**: Avoids database connections or client instantiations at import time. Context-bound database sessions are opened/teared down per request context.
+- **Thin Blueprints**: Blueprints parse incoming query parameters, coordinate with services, and render Jinja templates or return JSON. They do not write data or compute metrics.
+- **Service Layer**: Decouples business logic from endpoints. Handles data clustering, quality status evaluations, and symbol validations.
+- **Server-Rendered SVG Charts**: Serves line charts using pure, dependency-free SVGs dynamically built from historical data points, ensuring zero client-side framework requirements.
+

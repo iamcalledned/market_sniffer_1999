@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="display: flex; flex-direction: column; gap: 20px;">
+  
+  <div class="form-card">
+    <h2>Yahoo Quote Lookup</h2>
+    <form action="{{ url_for('quotes.lookup') }}" method="POST">
+      <div class="form-group">
+        <label for="symbol">Symbol / Ticker</label>
+        <input type="text" id="symbol" name="symbol" class="form-input" placeholder="e.g. SPY, NVDA" value="{{ symbol_value or (quote.symbol if quote else '') }}" required>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-checkbox">
+          <input type="checkbox" name="persist" value="true" {% if quote and quote.is_persisted %}checked{% endif %}>
+          Persist snapshot to Database
+        </label>
+      </div>
+      
+      <button type="submit" class="btn btn-primary">Query Ticker</button>
+    </form>
+  </div>
+
+  {% if error %}
+    <div class="error-card" style="margin: 0; max-width: 500px;">
+      <h2>Lookup Failed</h2>
+      <p>{{ error }}</p>
+    </div>
+  {% endif %}
+
+  {% if quote %}
+    <div class="quote-result-card" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-bottom: 15px;">
+        <h3>Quote Details: {{ quote.symbol }}</h3>
+        {% if quote.is_persisted %}
+          <span class="header-status-badge status-current">Persisted to DB</span>
+        {% endif %}
+      </div>
+      
+      <div class="quote-grid">
+        <div class="quote-item">
+          <div>Last Price</div>
+          <div style="font-size: 16px; color: var(--color-blue);">
+            {% if quote.last_price is not none %}{{ quote.last_price }}{% else %}N/A{% endif %}
+          </div>
+        </div>
+        <div class="quote-item">
+          <div>Prior Close</div>
+          <div>{% if quote.prior_close is not none %}{{ quote.prior_close }}{% else %}N/A{% endif %}</div>
+        </div>
+        <div class="quote-item">
+          <div>Bid / Ask</div>
+          <div>
+            {% if quote.bid is not none %}{{ quote.bid }}{% else %}N/A{% endif %} / 
+            {% if quote.ask is not none %}{{ quote.ask }}{% else %}N/A{% endif %}
+          </div>
+        </div>
+        <div class="quote-item">
+          <div>Volume</div>
+          <div>{% if quote.volume is not none %}{{ quote.volume }}{% else %}N/A{% endif %}</div>
+        </div>
+        <div class="quote-item">
+          <div>Market State</div>
+          <div style="text-transform: capitalize;">{{ quote.market_state or 'unknown' }}</div>
+        </div>
+        <div class="quote-item">
+          <div>Delay Status</div>
+          <div>
+            {% if quote.quote_delay_seconds == 0 %}
+              <span style="color: var(--color-green); font-weight: bold;">Live</span>
+            {% elif quote.quote_delay_seconds %}
+              {{ quote.quote_delay_seconds // 60 }}m delayed
+            {% else %}
+              Unknown
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      
+      <div style="margin-top: 15px; font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; border-top: 1px solid var(--border-color); padding-top: 10px;">
+        <div><strong>Provider:</strong> {{ quote.provider }} (best-effort quality)</div>
+        <div><strong>Quote Timestamp:</strong> {{ quote.quote_timestamp_utc.strftime('%Y-%m-%d %H:%M:%S UTC') }}</div>
+        <div><strong>Requested At:</strong> {{ quote.request_timestamp_utc.strftime('%Y-%m-%d %H:%M:%S UTC') }}</div>
+      </div>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

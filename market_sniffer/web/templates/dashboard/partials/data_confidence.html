@@ -1,0 +1,45 @@
+<section class="data-confidence-card">
+  <h2>Data Confidence Indicators</h2>
+  <div class="confidence-stats">
+    <div class="confidence-stat-item">
+      <div>Confidence Status</div>
+      <div class="confidence-impact {% if vm.data_confidence.status.lower() == 'current' %}current{% elif vm.data_confidence.status.lower() == 'attention' %}attention{% else %}stale{% endif %}">
+        {{ vm.data_confidence.status }}
+      </div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Unresolved Issues</div>
+      <div>{{ vm.data_confidence.unresolved_count }}</div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Blocking Metrics</div>
+      <div>{{ vm.data_confidence.blocking_count }}</div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Unavailable Metrics</div>
+      <div>{{ vm.data_confidence.unavailable_count }}</div>
+    </div>
+    <div class="confidence-stat-item">
+      <div>Stale Metrics</div>
+      <div>{{ vm.data_confidence.stale_count }}</div>
+    </div>
+  </div>
+  
+  <p class="confidence-impact {% if vm.data_confidence.status.lower() == 'current' %}current{% elif vm.data_confidence.status.lower() == 'attention' %}attention{% else %}stale{% endif %}">
+    {{ vm.data_confidence.impact_statement }}
+  </p>
+
+  {% if vm.data_confidence.quality_groups %}
+    <div style="margin-top: 15px;">
+      <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Top Quality Event Groups:</div>
+      <div class="quality-groups-list">
+        {% for group in vm.data_confidence.quality_groups %}
+          <div class="quality-group-item">
+            <span>{{ group.name }}</span>
+            <span style="font-weight: 600;">{{ group.count }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</section>
