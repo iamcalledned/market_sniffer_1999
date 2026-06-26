@@ -1,0 +1,37 @@
+profiles:
+  core:
+    description: "Default bootstrap: FRED macro, daily market bars, corporate actions, and Yahoo validation sample."
+    includes: ["fred_macro", "daily_market", "validation"]
+    runs_by_default: true
+  daily_market:
+    description: "Daily OHLCV bars and available corporate actions for registered active instruments."
+    source: massive
+    frequency: daily
+    retention: indefinite
+    batch_size: 10
+  fred_macro:
+    description: "Canonical macro and financial-condition observations from FRED."
+    source: fred
+    frequency: source_defined
+    retention: indefinite
+    batch_size: 12
+  validation:
+    description: "Controlled Yahoo validation sample; does not promote Yahoo to canonical."
+    source: yahoo
+    frequency: on_demand
+    retention: indefinite
+    enabled_by_default: false
+    sample_symbols: ["SPY", "QQQ", "TLT", "NVDA"]
+  future_intraday_watchlist:
+    description: "Prepared future one-minute/five-minute watchlist, entitlement-gated."
+    source: massive
+    frequency: intraday
+    retention: "planned rolling 90 days"
+    enabled_by_default: false
+    intervals: ["1m", "5m"]
+  future_realtime_quote_watchlist:
+    description: "Prepared future quote snapshot refresh list; no recurring polling in v1."
+    source: yahoo
+    frequency: on_demand
+    retention: "snapshot retention policy to be decided before activation"
+    enabled_by_default: false

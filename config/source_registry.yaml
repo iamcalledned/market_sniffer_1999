@@ -1,0 +1,48 @@
+sources:
+  massive:
+    code: massive
+    display_name: Massive / Polygon
+    enabled: true
+    credential_env: MASSIVE_API_KEY
+    alternate_credential_env: POLYGON_API_KEY
+    canonical_responsibilities:
+      - daily_equity_etf_bars
+      - corporate_actions
+      - selected_future_intraday_bars
+      - available_market_snapshots
+    validation_responsibilities: []
+    future_quote_capability: true
+    update_expectations: "Daily bars after market close; intraday and quotes are future scoped."
+    known_plan_limits: "Endpoints and history depend on the active Massive/Polygon plan."
+    failure_behavior: "Record entitlement, rate-limit, malformed data, and collector failures without fabricating values."
+  fred:
+    code: fred
+    display_name: Federal Reserve Economic Data
+    enabled: true
+    credential_env: FRED_API_KEY
+    canonical_responsibilities:
+      - macroeconomic_series
+      - rates
+      - credit
+      - inflation
+      - labor
+      - housing
+      - financial_conditions
+    validation_responsibilities: []
+    future_quote_capability: false
+    update_expectations: "Series-specific cadence; preserve realtime vintage fields when supplied."
+    known_plan_limits: "Some series can be retired, unavailable, or revised."
+    failure_behavior: "Record unavailable or malformed series as data-quality events."
+  yahoo:
+    code: yahoo
+    display_name: Yahoo Finance
+    enabled: false
+    credential_env: null
+    canonical_responsibilities: []
+    validation_responsibilities:
+      - selected_market_bar_validation
+      - metadata_enrichment
+    future_quote_capability: true
+    update_expectations: "Validation sample on demand; future quote snapshots only when explicitly enabled."
+    known_plan_limits: "Terms, delay, and field availability can vary; not canonical for this milestone."
+    failure_behavior: "Never silently replace Massive/Polygon or FRED; record validation unavailable or discrepancies."
