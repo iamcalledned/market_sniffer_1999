@@ -1,5 +1,8 @@
 <section class="data-confidence-card">
-  <h2>Data Confidence Indicators</h2>
+  <div class="section-heading compact">
+    <span class="section-kicker">Reliability</span>
+    <h2>Data Confidence Indicators</h2>
+  </div>
   <div class="confidence-stats">
     <div class="confidence-stat-item">
       <div>Confidence Status</div>
@@ -30,13 +33,13 @@
   </p>
 
   {% if vm.data_confidence.quality_groups %}
-    <div style="margin-top: 15px;">
-      <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Top Quality Event Groups:</div>
+    <div class="quality-groups">
+      <div class="mini-heading">Top Quality Event Groups:</div>
       <div class="quality-groups-list">
         {% for group in vm.data_confidence.quality_groups %}
           <div class="quality-group-item">
             <span>{{ group.name }}</span>
-            <span style="font-weight: 600;">{{ group.count }}</span>
+            <strong>{{ group.count }}</strong>
           </div>
         {% endfor %}
       </div>

@@ -10,7 +10,7 @@
           <li><strong>Enabled Evidence Rules Count:</strong> {{ vm.technical_appendix.enabled_rules_count }}</li>
         </ul>
         
-        <h4 style="margin-top: 15px;">Latest Execution Runs</h4>
+        <h4 class="subsection-heading">Latest Execution Runs</h4>
         <ul>
           <li><strong>Collector Run:</strong> Started {{ vm.technical_appendix.latest_runs.collection.started_at }} (Status: {{ vm.technical_appendix.latest_runs.collection.status }})</li>
           <li><strong>Metric Calculation Run:</strong> Started {{ vm.technical_appendix.latest_runs.metrics.started_at }} (Status: {{ vm.technical_appendix.latest_runs.metrics.status }})</li>
@@ -19,58 +19,62 @@
       
       <div class="appendix-section">
         <h4>Read-Only & Provider Boundaries</h4>
-        <p style="margin-bottom: 8px; color: var(--text-muted);">
+        <p>
           {{ vm.technical_appendix.readonly_note }}
         </p>
-        <p style="color: var(--text-muted);">
+        <p>
           {{ vm.technical_appendix.yahoo_note }}
         </p>
       </div>
     </div>
     
     <div class="appendix-grid">
-      <div class="appendix-section" style="grid-column: span 2;">
+      <div class="appendix-section appendix-wide">
         <h4>Registered Data Sources</h4>
-        <table class="metric-table" style="font-size: 11px;">
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Description</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for src in vm.technical_appendix.source_summaries %}
+        <div class="table-scroll">
+          <table class="metric-table compact-table">
+            <thead>
               <tr>
-                <td style="font-family: monospace; font-weight: bold;">{{ src.code }}</td>
-                <td>{{ src.name }}</td>
-                <td style="color: var(--text-muted);">{{ src.description }}</td>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Description</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {% for src in vm.technical_appendix.source_summaries %}
+                <tr>
+                  <td class="metric-code-cell strong">{{ src.code }}</td>
+                  <td>{{ src.name }}</td>
+                  <td class="muted-cell">{{ src.description }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
     
     <div class="appendix-grid">
-      <div class="appendix-section" style="grid-column: span 2;">
+      <div class="appendix-section appendix-wide">
         <h4>Active Metric Definitions & Formula Versions</h4>
-        <table class="metric-table" style="font-size: 11px;">
-          <thead>
-            <tr>
-              <th>Metric Code</th>
-              <th>Formula Version</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for code in vm.technical_appendix.metric_codes %}
+        <div class="table-scroll">
+          <table class="metric-table compact-table">
+            <thead>
               <tr>
-                <td style="font-family: monospace;">{{ code }}</td>
-                <td style="font-family: monospace; color: var(--text-muted);">{{ vm.technical_appendix.formula_versions[code] }}</td>
+                <th>Metric Code</th>
+                <th>Formula Version</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {% for code in vm.technical_appendix.metric_codes %}
+                <tr>
+                  <td class="metric-code-cell">{{ code }}</td>
+                  <td class="metric-code-cell muted-cell">{{ vm.technical_appendix.formula_versions[code] }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>

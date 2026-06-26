@@ -1,36 +1,41 @@
 <section class="market-map-grid">
   {% for panel in vm.market_map %}
-    <div class="market-panel">
+    <article class="market-panel">
       <div class="market-panel-header">
-        <h3>{{ panel.title }}</h3>
+        <div>
+          <span class="section-kicker">Market map</span>
+          <h3>{{ panel.title }}</h3>
+        </div>
         {% if panel.chart_link %}
-          <a href="{{ panel.chart_link }}" class="btn">View Key Chart</a>
+          <a href="{{ panel.chart_link }}" class="btn btn-secondary">View Key Chart</a>
         {% endif %}
       </div>
       <div class="market-panel-summary">{{ panel.summary }}</div>
       
-      <table class="metric-table">
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th>Code</th>
-            <th style="text-align: right;">Value</th>
-            <th style="text-align: right;">Chart</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for metric in panel.metrics %}
+      <div class="table-scroll">
+        <table class="metric-table">
+          <thead>
             <tr>
-              <td style="font-weight: 500;">{{ metric.display_name }}</td>
-              <td class="metric-code-cell">{{ metric.metric_code }}</td>
-              <td class="metric-value-cell">{{ metric.value }}</td>
-              <td style="text-align: right;">
-                <a href="{{ metric.chart_link }}" style="font-size: 12px; font-weight: 600;">📊</a>
-              </td>
+              <th>Metric</th>
+              <th>Code</th>
+              <th class="numeric">Value</th>
+              <th class="numeric">Chart</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {% for metric in panel.metrics %}
+              <tr>
+                <td class="metric-name-cell">{{ metric.display_name }}</td>
+                <td class="metric-code-cell">{{ metric.metric_code }}</td>
+                <td class="metric-value-cell">{{ metric.value }}</td>
+                <td class="metric-action-cell">
+                  <a href="{{ metric.chart_link }}" class="icon-link" aria-label="Open chart for {{ metric.display_name }}">Chart</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
   {% endfor %}
 </section>

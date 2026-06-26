@@ -1,22 +1,32 @@
-<header>
-  <div>
+<header class="dashboard-hero">
+  <div class="hero-copy">
+    <div class="eyebrow">Daily market intelligence</div>
     <h1>Market Sniffer 2000</h1>
-    <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-      Data: 
+    <p>Local warehouse briefing across trend, breadth, rates, credit, volatility, and evidence quality.</p>
+  </div>
+
+  <div class="hero-status-panel">
+    <div class="status-row">
+      <span>Data</span>
       <span class="header-status-badge {% if vm.header.data_status.lower() == 'succeeded' %}status-current{% elif vm.header.data_status.lower() == 'running' %}status-attention{% else %}status-stale{% endif %}">
         {{ vm.header.data_status }}
       </span>
-      · Metrics: 
+    </div>
+    <div class="status-row">
+      <span>Metrics</span>
       <span class="header-status-badge {% if vm.header.metrics_status.lower() == 'succeeded' %}status-current{% elif vm.header.metrics_status.lower() == 'running' %}status-attention{% else %}status-stale{% endif %}">
         {{ vm.header.metrics_status }}
       </span>
     </div>
-  </div>
-  <div class="header-meta">
-    <div>Evidence through {{ vm.header.evidence_date }}</div>
-    <div>Generated {{ vm.header.generated_time }}</div>
-    <div style="margin-top: 4px; font-weight: 600; color: {% if vm.header.quality_count > 0 %}var(--color-yellow){% else %}var(--text-muted){% endif %}">
-      Quality Issues: {{ vm.header.quality_count }}
+    <div class="status-row">
+      <strong>Evidence through {{ vm.header.evidence_date }}</strong>
+    </div>
+    <div class="status-row">
+      <span>Generated</span>
+      <strong>{{ vm.header.generated_time }}</strong>
+    </div>
+    <div class="quality-pill {% if vm.header.quality_count > 0 %}attention{% else %}current{% endif %}">
+      <span>Quality Issues: {{ vm.header.quality_count }}</span>
     </div>
   </div>
 </header>

@@ -1,9 +1,12 @@
-<section class="market-brief-card" id="start-here-section">
-  <h2>Start Here</h2>
+<section class="brief-card start-card" id="start-here-section">
+  <div class="section-heading">
+    <span class="section-kicker">Orientation</span>
+    <h2>Start Here</h2>
+  </div>
   <p class="market-brief-text">
     {{ vm.start_here.intro_text }}
   </p>
-  <ul style="margin-top: 10px; padding-left: 20px; color: var(--text-muted); display: flex; flex-direction: column; gap: 6px;">
+  <ul class="check-list">
     {% for point in vm.start_here.bullet_points %}
       <li>{{ point }}</li>
     {% endfor %}

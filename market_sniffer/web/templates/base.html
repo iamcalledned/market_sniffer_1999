@@ -3,18 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Market Sniffer 2000 - Briefing Dashboard</title>
+  <title>{% block title %}Market Sniffer 2000{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
-  <div class="container">
-    <nav class="nav-bar">
-      <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
-      <a href="{{ url_for('charts.index') }}" class="{% if request.blueprint == 'charts' %}active{% endif %}">Charts</a>
-      <a href="{{ url_for('quotes.lookup_form') }}" class="{% if request.blueprint == 'quotes' %}active{% endif %}">Yahoo Quote Lookup</a>
+  <div class="app-shell">
+    <nav class="nav-bar" aria-label="Primary">
+      <a class="brand-mark" href="{{ url_for('dashboard.index') }}">
+        <span class="brand-signal" aria-hidden="true"></span>
+        <span>Market Sniffer 2000</span>
+      </a>
+      <div class="nav-links">
+        <a href="{{ url_for('dashboard.index') }}" class="{% if request.blueprint == 'dashboard' %}active{% endif %}">Dashboard</a>
+        <a href="{{ url_for('charts.index') }}" class="{% if request.blueprint == 'charts' %}active{% endif %}">Charts</a>
+        <a href="{{ url_for('quotes.lookup_form') }}" class="{% if request.blueprint == 'quotes' %}active{% endif %}">Quote Lookup</a>
+      </div>
     </nav>
     
-    <main>
+    <main class="page-frame">
       {% block content %}{% endblock %}
     </main>
   </div>

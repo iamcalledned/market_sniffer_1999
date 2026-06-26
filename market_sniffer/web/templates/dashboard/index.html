@@ -1,12 +1,18 @@
 {% extends "base.html" %}
 
+{% block title %}Market Sniffer 2000 - Briefing Dashboard{% endblock %}
+
 {% block content %}
   {% include "dashboard/partials/header.html" %}
-  {% include "dashboard/partials/start_here.html" %}
-  {% include "dashboard/partials/market_brief.html" %}
   {% include "dashboard/partials/key_market_strip.html" %}
-  {% include "dashboard/partials/what_changed.html" %}
+  <section class="briefing-grid">
+    {% include "dashboard/partials/market_brief.html" %}
+    {% include "dashboard/partials/start_here.html" %}
+  </section>
   {% include "dashboard/partials/market_map.html" %}
-  {% include "dashboard/partials/data_confidence.html" %}
+  <section class="lower-grid">
+    {% include "dashboard/partials/what_changed.html" %}
+    {% include "dashboard/partials/data_confidence.html" %}
+  </section>
   {% include "dashboard/partials/technical_appendix.html" %}
 {% endblock %}
