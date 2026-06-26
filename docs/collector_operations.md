@@ -84,6 +84,8 @@ Schema changes: add a SQLAlchemy model change and a new Alembic revision. Do not
 
 Adding a series or instrument: update the registry YAML, run `registry validate`, then `db init` to sync registry records.
 
+Yahoo historical validation support: set `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`.
+
 Future quote support: set `YAHOO_ENABLED=true` and `YAHOO_QUOTES_ENABLED=true` only when a quote collector command is implemented and source delay/quality metadata is documented. Normal backfills do not poll quotes.
 
 ## FRED Current and Point-in-Time Reads

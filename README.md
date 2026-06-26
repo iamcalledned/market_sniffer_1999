@@ -59,7 +59,7 @@ Default market backfills end at the most recent completed U.S. equity session us
 
 Run `verify-foundation --days 5` successfully before the full 24-month production seed.
 
-Yahoo historical validation runs through the `validation` profile when `YAHOO_ENABLED=true`. It stores Yahoo source-specific daily bars, compares close and volume against Massive/Polygon over matching completed sessions, records discrepancies, and never changes canonical bar selection.
+Yahoo historical validation runs through the `validation` profile when `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. It stores Yahoo source-specific daily bars, compares close and volume against Massive/Polygon over matching completed sessions, records discrepancies, and never changes canonical bar selection.
 
 ## Configuration
 
@@ -69,9 +69,12 @@ Configuration comes from environment variables or an untracked `.env` file:
 - `MASSIVE_API_KEY` or `POLYGON_API_KEY`
 - `FRED_API_KEY`
 - `YAHOO_ENABLED`
+- `YAHOO_HISTORICAL_VALIDATION_ENABLED`
 - `YAHOO_QUOTES_ENABLED`
 - `MARKET_SNIFFER_LOG_LEVEL`
 
 The default database path is `runtime/market_sniffer.sqlite3`, which is ignored by Git along with WAL/SHM files, logs, `.env`, caches, and raw payload directories.
 
-Yahoo historical validation is enabled by default. Yahoo quote polling remains disabled by default through `YAHOO_QUOTES_ENABLED=false`.
+Yahoo historical validation is explicit through `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. Yahoo quote polling remains disabled by default through `YAHOO_QUOTES_ENABLED=false`.
+
+For the simple operator runbook, see [docs/HOW_TO_RUN_MARKET_SNIFFER.md](docs/HOW_TO_RUN_MARKET_SNIFFER.md).

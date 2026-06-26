@@ -20,8 +20,8 @@ Role: canonical for configured macro series. Credential: `FRED_API_KEY`. Known l
 
 Use cases: selected validation, enrichment, and future quote snapshots.
 
-Role: validation/enrichment now; future quote option only when explicitly enabled. Historical validation is enabled by default; quote polling is not. Credential: none by default. Known limits: terms, delay, market state, and field availability vary. Failure behavior: validation unavailable or discrepancy events are recorded. Yahoo is never silently promoted to canonical.
+Role: validation/enrichment now; future quote option only when explicitly enabled. Historical validation uses `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`; quote polling is not enabled by default. Credential: none by default. Known limits: terms, delay, market state, and field availability vary. Failure behavior: validation unavailable or discrepancy events are recorded. Yahoo is never silently promoted to canonical.
 
 Daily market source precedence: validation/fallback only. Fallback is disabled unless a registry/profile explicitly allows it.
 
-Historical validation uses `yfinance` when `YAHOO_ENABLED=true`. Yahoo daily bars are stored as source-specific records, compared against Massive/Polygon, and classified as match, minor difference, material difference, not comparable, or validation unavailable.
+Historical validation uses `yfinance` when `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. Yahoo daily bars are stored as source-specific records, compared against Massive/Polygon, and classified as match, minor difference, material difference, not comparable, or validation unavailable.
