@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 - 2026-06-26
+
+- Added executable metric and evidence registries.
+- Added metric definition, observation, calculation run, and evidence event tables.
+- Added metrics and evidence CLI commands for validation, list, backfill, calculation, inspection, health, and summaries.
+- Added formula, lineage, idempotency, evidence, and no-Yahoo/quote-polling tests for derived metrics.
+
 ## 0.1.0 - 2026-06-26
 
 - Added Data Foundation v1 SQLite warehouse schema.

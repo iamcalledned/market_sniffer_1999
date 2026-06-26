@@ -390,6 +390,98 @@ class SourceDiscrepancy(Base):
     superseded_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
+class MetricDefinition(Base):
+    __tablename__ = "metric_definitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    metric_code: Mapped[str] = mapped_column(String(120), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(200))
+    category: Mapped[str] = mapped_column(String(80), index=True)
+    formula_version: Mapped[str] = mapped_column(String(40), index=True)
+    frequency: Mapped[str] = mapped_column(String(40), default="market_daily", index=True)
+    unit: Mapped[str] = mapped_column(String(40))
+    definition_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class MetricCalculationRun(Base):
+    __tablename__ = "metric_calculation_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile: Mapped[str] = mapped_column(String(80), index=True)
+    as_of_start: Mapped[date | None] = mapped_column(Date, index=True)
+    as_of_end: Mapped[date | None] = mapped_column(Date, index=True)
+    status: Mapped[str] = mapped_column(String(40), index=True)
+    started_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    metrics_attempted: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_succeeded: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    metrics_failed: Mapped[int] = mapped_column(Integer, default=0)
+    details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class MetricObservation(Base):
+    __tablename__ = "metric_observations"
+    __table_args__ = (
+        UniqueConstraint(
+            "metric_definition_id",
+            "as_of_date",
+            "formula_version",
+            name="uq_metric_observation_formula",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    metric_definition_id: Mapped[int] = mapped_column(ForeignKey("metric_definitions.id"), index=True)
+    calculation_run_id: Mapped[int | None] = mapped_column(ForeignKey("metric_calculation_runs.id"), index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, index=True)
+    value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    value_text: Mapped[str | None] = mapped_column(Text)
+    unit: Mapped[str] = mapped_column(String(40))
+    quality_status: Mapped[str] = mapped_column(String(40), default="ok", index=True)
+    quality_details_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    formula_version: Mapped[str] = mapped_column(String(40), index=True)
+    source_lineage_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    input_window_start: Mapped[date | None] = mapped_column(Date, index=True)
+    input_window_end: Mapped[date | None] = mapped_column(Date, index=True)
+    effective_source_date: Mapped[date | None] = mapped_column(Date, index=True)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class EvidenceEvent(Base):
+    __tablename__ = "evidence_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "event_code",
+            "metric_definition_id",
+            "as_of_date",
+            "rule_version",
+            name="uq_evidence_event_rule",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_code: Mapped[str] = mapped_column(String(160), index=True)
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
+    severity: Mapped[str] = mapped_column(String(20), index=True)
+    metric_definition_id: Mapped[int] = mapped_column(ForeignKey("metric_definitions.id"), index=True)
+    metric_observation_id: Mapped[int | None] = mapped_column(ForeignKey("metric_observations.id"), index=True)
+    as_of_date: Mapped[date] = mapped_column(Date, index=True)
+    rule_version: Mapped[str] = mapped_column(String(40), index=True)
+    headline: Mapped[str] = mapped_column(String(240))
+    detail: Mapped[str] = mapped_column(Text)
+    value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    prior_value_numeric: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    threshold_numeric: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    evidence_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class SystemSetting(Base):
     __tablename__ = "system_settings"
 

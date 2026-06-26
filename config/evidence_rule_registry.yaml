@@ -1,0 +1,131 @@
+rules:
+  ev.spy_distance_200d_cross_zero:
+    enabled: true
+    metric_code: market.spy_distance_200d
+    event_type: threshold_cross
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0
+    direction: both
+    headline: "SPY crossed its 200-day trend line"
+    detail_template: "SPY distance to the 200-day average moved from {prior_value} to {value}."
+  ev.spy_distance_200d_extended:
+    enabled: true
+    metric_code: market.spy_distance_200d
+    event_type: threshold_cross
+    severity: warning
+    rule_version: evidence_v1
+    threshold: 0.05
+    direction: abs_above
+    headline: "SPY moved more than 5% from its 200-day average"
+    detail_template: "SPY distance to the 200-day average is {value}."
+  ev.spy_realized_vol_elevated:
+    enabled: true
+    metric_code: market.spy_realized_vol_21d
+    event_type: threshold_cross
+    severity: warning
+    rule_version: evidence_v1
+    threshold: 0.25
+    direction: above
+    headline: "SPY realized volatility became elevated"
+    detail_template: "SPY 21-day realized volatility is {value}."
+  ev.breadth_50d_cross_half:
+    enabled: true
+    metric_code: breadth.tracked_above_50d_pct
+    event_type: threshold_cross
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0.5
+    direction: both
+    headline: "Tracked breadth crossed 50% above 50-day averages"
+    detail_template: "50-day breadth moved from {prior_value} to {value}."
+  ev.breadth_200d_cross_half:
+    enabled: true
+    metric_code: breadth.tracked_above_200d_pct
+    event_type: threshold_cross
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0.5
+    direction: both
+    headline: "Tracked breadth crossed 50% above 200-day averages"
+    detail_template: "200-day breadth moved from {prior_value} to {value}."
+  ev.xlk_vs_spy_material:
+    enabled: true
+    metric_code: leadership.xlk_vs_spy_21d
+    event_type: material_change
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0.03
+    direction: abs_above
+    headline: "XLK relative performance became material"
+    detail_template: "XLK 21-day return versus SPY is {value}."
+  ev.ai_infra_vs_spy_material:
+    enabled: true
+    metric_code: leadership.ai_infra_vs_spy_21d
+    event_type: material_change
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0.05
+    direction: abs_above
+    headline: "AI infrastructure relative performance became material"
+    detail_template: "AI infrastructure 21-day return versus SPY is {value}."
+  ev.ust_2s10s_cross_zero:
+    enabled: true
+    metric_code: rates.ust_2s10s_spread
+    event_type: threshold_cross
+    severity: warning
+    rule_version: evidence_v1
+    threshold: 0
+    direction: both
+    headline: "2s10s Treasury spread crossed zero"
+    detail_template: "2s10s moved from {prior_value} to {value}."
+  ev.hy_oas_change_material:
+    enabled: true
+    metric_code: credit.hy_oas_change_21d
+    event_type: material_change
+    severity: warning
+    rule_version: evidence_v1
+    threshold: 0.5
+    direction: abs_above
+    headline: "High-yield spread change became material"
+    detail_template: "High-yield OAS 21-observation change is {value}."
+  ev.nfci_change_material:
+    enabled: true
+    metric_code: macro.nfci_change_21d
+    event_type: material_change
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0.25
+    direction: abs_above
+    headline: "Financial conditions change became material"
+    detail_template: "NFCI 21-observation change is {value}."
+  ev.vix_change_material:
+    enabled: true
+    metric_code: volatility.vix_change_5d
+    event_type: material_change
+    severity: warning
+    rule_version: evidence_v1
+    threshold: 5
+    direction: abs_above
+    headline: "VIX five-observation change became material"
+    detail_template: "VIX 5-observation change is {value}."
+  ev.vix_level_elevated:
+    enabled: true
+    metric_code: volatility.vix_level
+    event_type: threshold_cross
+    severity: warning
+    rule_version: evidence_v1
+    threshold: 25
+    direction: above
+    headline: "VIX crossed above elevated-volatility threshold"
+    detail_template: "VIX is {value}."
+  ev.gold_vs_spy_material:
+    enabled: true
+    metric_code: cross_asset.gold_vs_spy_21d
+    event_type: material_change
+    severity: info
+    rule_version: evidence_v1
+    threshold: 0.04
+    direction: abs_above
+    headline: "Gold relative performance became material"
+    detail_template: "GLD 21-day return versus SPY is {value}."

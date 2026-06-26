@@ -1,0 +1,258 @@
+profiles:
+  core:
+    enabled: true
+    description: "Initial derived metric set for daily market evidence."
+
+baskets:
+  breadth_core:
+    min_valid_ratio: 0.8
+    symbols: [SPY, QQQ, IWM, DIA, VTI, ACWI, EFA, EEM, XLK, XLF, XLE, XLV, XLI, XLY, XLP, XLU, XLB, XLRE, XLC, IWD, IWF, MTUM, QUAL, USMV, VLUE, SIZE]
+  ai_infrastructure:
+    min_valid_count: 10
+    symbols: [NVDA, AMD, AVGO, MU, MRVL, ARM, TSM, ASML, AMAT, LRCX, KLAC, VRT, ETN, PWR, CEG, VST, EQIX, DLR, ANET, CRDO]
+
+metrics:
+  market.spy_close:
+    display_name: "SPY close"
+    enabled: true
+    category: market_structure
+    formula: close
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: price
+    inputs: {symbols: [SPY]}
+  market.spy_return_5d:
+    display_name: "SPY 5-day return"
+    enabled: true
+    category: market_structure
+    formula: return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 5
+    inputs: {symbols: [SPY]}
+  market.spy_return_21d:
+    display_name: "SPY 21-day return"
+    enabled: true
+    category: market_structure
+    formula: return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 21
+    inputs: {symbols: [SPY]}
+  market.spy_return_63d:
+    display_name: "SPY 63-day return"
+    enabled: true
+    category: market_structure
+    formula: return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 63
+    inputs: {symbols: [SPY]}
+  market.spy_ma_20d:
+    display_name: "SPY 20-day moving average"
+    enabled: true
+    category: market_structure
+    formula: moving_average
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: price
+    lookback: 20
+    inputs: {symbols: [SPY]}
+  market.spy_ma_50d:
+    display_name: "SPY 50-day moving average"
+    enabled: true
+    category: market_structure
+    formula: moving_average
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: price
+    lookback: 50
+    inputs: {symbols: [SPY]}
+  market.spy_ma_200d:
+    display_name: "SPY 200-day moving average"
+    enabled: true
+    category: market_structure
+    formula: moving_average
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: price
+    lookback: 200
+    inputs: {symbols: [SPY]}
+  market.spy_distance_200d:
+    display_name: "SPY distance from 200-day moving average"
+    enabled: true
+    category: market_structure
+    formula: distance_to_ma
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 200
+    inputs: {symbols: [SPY]}
+  market.spy_realized_vol_21d:
+    display_name: "SPY 21-day realized volatility"
+    enabled: true
+    category: market_structure
+    formula: realized_vol
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: annualized_ratio
+    lookback: 21
+    inputs: {symbols: [SPY]}
+  market.spy_realized_vol_63d:
+    display_name: "SPY 63-day realized volatility"
+    enabled: true
+    category: market_structure
+    formula: realized_vol
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: annualized_ratio
+    lookback: 63
+    inputs: {symbols: [SPY]}
+  breadth.tracked_above_50d_pct:
+    display_name: "Tracked equity universe above 50-day average"
+    enabled: true
+    category: leadership_breadth
+    formula: breadth_above_ma_pct
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 50
+    inputs: {basket: breadth_core}
+  breadth.tracked_above_200d_pct:
+    display_name: "Tracked equity universe above 200-day average"
+    enabled: true
+    category: leadership_breadth
+    formula: breadth_above_ma_pct
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 200
+    inputs: {basket: breadth_core}
+  leadership.xlk_vs_spy_21d:
+    display_name: "XLK versus SPY 21-day return"
+    enabled: true
+    category: leadership_breadth
+    formula: relative_return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 21
+    inputs: {symbol: XLK, benchmark: SPY}
+  leadership.xlf_vs_spy_21d:
+    display_name: "XLF versus SPY 21-day return"
+    enabled: true
+    category: leadership_breadth
+    formula: relative_return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 21
+    inputs: {symbol: XLF, benchmark: SPY}
+  leadership.xle_vs_spy_21d:
+    display_name: "XLE versus SPY 21-day return"
+    enabled: true
+    category: leadership_breadth
+    formula: relative_return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 21
+    inputs: {symbol: XLE, benchmark: SPY}
+  leadership.ai_infra_vs_spy_21d:
+    display_name: "AI infrastructure basket versus SPY 21-day return"
+    enabled: true
+    category: leadership_breadth
+    formula: basket_relative_return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 21
+    inputs: {basket: ai_infrastructure, benchmark: SPY}
+  rates.ust_2s10s_spread:
+    display_name: "10-year minus 2-year Treasury spread"
+    enabled: true
+    category: rates_credit
+    formula: fred_spread
+    formula_version: metric_v1
+    frequency: business_daily
+    unit: percent
+    inputs: {long_series: DGS10, short_series: DGS2}
+  rates.ust_3m10y_spread:
+    display_name: "10-year minus 3-month Treasury spread"
+    enabled: true
+    category: rates_credit
+    formula: fred_level
+    formula_version: metric_v1
+    frequency: business_daily
+    unit: percent
+    inputs: {series: T10Y3M}
+  credit.hy_oas:
+    display_name: "High-yield option-adjusted spread"
+    enabled: true
+    category: rates_credit
+    formula: fred_level
+    formula_version: metric_v1
+    frequency: business_daily
+    unit: percent
+    inputs: {series: BAMLH0A0HYM2}
+  credit.hy_oas_change_21d:
+    display_name: "High-yield OAS 21-observation change"
+    enabled: true
+    category: rates_credit
+    formula: fred_change
+    formula_version: metric_v1
+    frequency: business_daily
+    unit: percent_point
+    lookback: 21
+    inputs: {series: BAMLH0A0HYM2}
+  macro.nfci_level:
+    display_name: "National Financial Conditions Index"
+    enabled: true
+    category: macro_momentum
+    formula: fred_level
+    formula_version: metric_v1
+    frequency: weekly
+    unit: index
+    inputs: {series: NFCI}
+  macro.nfci_change_21d:
+    display_name: "NFCI 21-observation change"
+    enabled: true
+    category: macro_momentum
+    formula: fred_change
+    formula_version: metric_v1
+    frequency: weekly
+    unit: index_point
+    lookback: 21
+    inputs: {series: NFCI}
+  volatility.vix_level:
+    display_name: "VIX level"
+    enabled: true
+    category: volatility_cross_asset
+    formula: fred_level
+    formula_version: metric_v1
+    frequency: business_daily
+    unit: index
+    inputs: {series: VIXCLS}
+  volatility.vix_change_5d:
+    display_name: "VIX 5-observation change"
+    enabled: true
+    category: volatility_cross_asset
+    formula: fred_change
+    formula_version: metric_v1
+    frequency: business_daily
+    unit: index_point
+    lookback: 5
+    inputs: {series: VIXCLS}
+  cross_asset.gold_vs_spy_21d:
+    display_name: "GLD versus SPY 21-day return"
+    enabled: true
+    category: volatility_cross_asset
+    formula: relative_return
+    formula_version: metric_v1
+    frequency: market_daily
+    unit: ratio
+    lookback: 21
+    inputs: {symbol: GLD, benchmark: SPY}

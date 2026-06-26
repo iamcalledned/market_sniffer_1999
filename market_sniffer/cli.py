@@ -31,6 +31,8 @@ from market_sniffer.services.dates import (
 )
 from market_sniffer.services.quality import DataQualityService
 from market_sniffer.services.retention import RetentionService
+from market_sniffer.services.metric_registry import MetricRegistryError, load_metric_registry
+from market_sniffer.services.metrics import MetricCalculationService
 from market_sniffer.services.registry_service import RegistryError, describe_key, load_registry
 from market_sniffer.settings import PROJECT_ROOT, get_settings
 
@@ -422,6 +424,150 @@ def cmd_validate_sources(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_metrics(args: argparse.Namespace) -> int:
+    try:
+        registry = load_metric_registry()
+    except MetricRegistryError as exc:
+        print(f"metric registry error: {exc}", file=sys.stderr)
+        return 2
+    if args.metrics_command == "validate":
+        print(
+            f"metric registry ok: enabled_metrics={len(registry.enabled_metrics)} "
+            f"enabled_evidence_rules={len(registry.enabled_rules)}"
+        )
+        return 0
+    command.upgrade(_alembic_config(), "head")
+    session, _ = _session()
+    with session:
+        service = MetricCalculationService(session, registry)
+        if args.metrics_command == "list":
+            for item in service.list_metrics():
+                print(
+                    f"{item['metric_code']} category={item['category']} formula={item['formula']} "
+                    f"version={item['formula_version']} enabled={item['enabled']}"
+                )
+            return 0
+        if args.metrics_command == "calculate":
+            as_of = _parse_date(args.as_of)
+            if as_of is None:
+                print("metrics calculate requires --as-of", file=sys.stderr)
+                return 2
+            print(json.dumps(service.calculate_date(as_of), indent=2, sort_keys=True, default=str))
+            return 0
+        if args.metrics_command == "backfill":
+            summary = service.backfill(
+                profile=args.profile,
+                start=_parse_date(args.date_from),
+                end=_parse_date(args.date_to),
+                only=args.only,
+            )
+            print(json.dumps(summary, indent=2, sort_keys=True, default=str))
+            return 0 if summary.get("failed", 0) == 0 else 1
+        if args.metrics_command == "inspect":
+            return _cmd_metric_inspect(session, args.metric_code, _parse_date(args.date_from), _parse_date(args.date_to), args.limit)
+        if args.metrics_command == "health":
+            print(json.dumps(service.health(), indent=2, sort_keys=True, default=str))
+            return 0
+    return 2
+
+
+def _cmd_metric_inspect(session, metric_code: str, start: date | None, end: date | None, limit: int) -> int:
+    definition = session.scalar(select(m.MetricDefinition).where(m.MetricDefinition.metric_code == metric_code))
+    if definition is None:
+        print(f"metric not found: {metric_code}", file=sys.stderr)
+        return 2
+    stmt = select(m.MetricObservation).where(m.MetricObservation.metric_definition_id == definition.id)
+    if start:
+        stmt = stmt.where(m.MetricObservation.as_of_date >= start)
+    if end:
+        stmt = stmt.where(m.MetricObservation.as_of_date <= end)
+    rows = session.scalars(stmt.order_by(m.MetricObservation.as_of_date.desc()).limit(limit)).all()
+    for row in rows:
+        print(
+            f"{metric_code} {row.as_of_date} value={row.value_numeric} "
+            f"quality={row.quality_status} formula_version={row.formula_version}"
+        )
+    return 0
+
+
+def cmd_evidence(args: argparse.Namespace) -> int:
+    command.upgrade(_alembic_config(), "head")
+    session, _ = _session()
+    with session:
+        if args.evidence_command == "recent":
+            recent_start = date.today() - timedelta(days=args.days)
+            recent_stmt = (
+                select(m.EvidenceEvent, m.MetricDefinition.metric_code)
+                .join(m.MetricDefinition, m.EvidenceEvent.metric_definition_id == m.MetricDefinition.id)
+                .where(m.EvidenceEvent.as_of_date >= recent_start)
+                .order_by(m.EvidenceEvent.as_of_date.desc(), m.EvidenceEvent.id.desc())
+            )
+            return _print_evidence_rows(session.execute(recent_stmt).all(), args.limit)
+        if args.evidence_command == "inspect":
+            event = session.get(m.EvidenceEvent, args.event_id)
+            if event is None:
+                print(f"evidence event not found: {args.event_id}", file=sys.stderr)
+                return 2
+            definition = session.get(m.MetricDefinition, event.metric_definition_id)
+            payload = {
+                "id": event.id,
+                "event_code": event.event_code,
+                "event_type": event.event_type,
+                "severity": event.severity,
+                "metric_code": definition.metric_code if definition else None,
+                "as_of_date": event.as_of_date,
+                "headline": event.headline,
+                "detail": event.detail,
+                "value_numeric": event.value_numeric,
+                "prior_value_numeric": event.prior_value_numeric,
+                "threshold_numeric": event.threshold_numeric,
+                "evidence": event.evidence_json,
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+            return 0
+        if args.evidence_command == "summary":
+            summary_start = _parse_date(args.date_from)
+            summary_end = _parse_date(args.date_to)
+            if summary_start is None or summary_end is None:
+                print("evidence summary requires --from and --to", file=sys.stderr)
+                return 2
+            summary_stmt = select(m.EvidenceEvent).where(
+                m.EvidenceEvent.as_of_date >= summary_start,
+                m.EvidenceEvent.as_of_date <= summary_end,
+            )
+            rows = session.scalars(summary_stmt).all()
+            by_type: dict[str, int] = {}
+            by_severity: dict[str, int] = {}
+            for event in rows:
+                by_type[event.event_type] = by_type.get(event.event_type, 0) + 1
+                by_severity[event.severity] = by_severity.get(event.severity, 0) + 1
+            print(
+                json.dumps(
+                    {
+                        "from": summary_start,
+                        "to": summary_end,
+                        "count": len(rows),
+                        "by_type": by_type,
+                        "by_severity": by_severity,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                    default=str,
+                )
+            )
+            return 0
+    return 2
+
+
+def _print_evidence_rows(rows: Sequence[Any], limit: int) -> int:
+    for event, metric_code in rows[:limit]:
+        print(
+            f"{event.id} {event.as_of_date} {event.severity} {event.event_type} "
+            f"{metric_code} value={event.value_numeric} headline={event.headline}"
+        )
+    return 0
+
+
 def _live_source_checks(settings, require_yahoo: bool) -> list[dict[str, object]]:
     _latest_start, end = MarketCalendar().recent_completed_range(1)
     start = end - timedelta(days=30)
@@ -586,6 +732,37 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("--fixture", action="store_true")
     verify.add_argument("--continue-on-error", action="store_true")
     verify.set_defaults(func=cmd_verify_foundation)
+
+    metrics = sub.add_parser("metrics")
+    metrics_sub = metrics.add_subparsers(dest="metrics_command", required=True)
+    metrics_sub.add_parser("list")
+    metrics_sub.add_parser("validate")
+    metrics_backfill = metrics_sub.add_parser("backfill")
+    metrics_backfill.add_argument("--profile", default="core")
+    metrics_backfill.add_argument("--from", dest="date_from")
+    metrics_backfill.add_argument("--to", dest="date_to")
+    metrics_backfill.add_argument("--only", action="append")
+    metrics_calculate = metrics_sub.add_parser("calculate")
+    metrics_calculate.add_argument("--as-of", required=True)
+    metrics_inspect = metrics_sub.add_parser("inspect")
+    metrics_inspect.add_argument("metric_code")
+    metrics_inspect.add_argument("--from", dest="date_from")
+    metrics_inspect.add_argument("--to", dest="date_to")
+    metrics_inspect.add_argument("--limit", type=int, default=20)
+    metrics_sub.add_parser("health")
+    metrics.set_defaults(func=cmd_metrics)
+
+    evidence = sub.add_parser("evidence")
+    evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
+    evidence_recent = evidence_sub.add_parser("recent")
+    evidence_recent.add_argument("--days", type=int, default=7)
+    evidence_recent.add_argument("--limit", type=int, default=50)
+    evidence_inspect = evidence_sub.add_parser("inspect")
+    evidence_inspect.add_argument("event_id", type=int)
+    evidence_summary = evidence_sub.add_parser("summary")
+    evidence_summary.add_argument("--from", dest="date_from", required=True)
+    evidence_summary.add_argument("--to", dest="date_to", required=True)
+    evidence.set_defaults(func=cmd_evidence)
     return parser
 
 

@@ -99,6 +99,20 @@ python -m market_sniffer.cli db summary
 
 Red flags are unresolved quality events, stale data, source failures, validation discrepancies that need review, missing credentials, entitlement failures, and rate-limit failures.
 
+## Run Derived Metrics and Evidence
+
+```bash
+python -m market_sniffer.cli metrics validate
+python -m market_sniffer.cli metrics list
+python -m market_sniffer.cli metrics calculate --as-of 2026-06-25
+python -m market_sniffer.cli metrics backfill --profile core
+python -m market_sniffer.cli metrics health
+python -m market_sniffer.cli evidence recent --days 7
+python -m market_sniffer.cli evidence summary --from 2026-06-19 --to 2026-06-25
+```
+
+Metrics read canonical daily market bars and canonical FRED observations only. They do not collect quotes or use Yahoo rows for core metric values.
+
 ## See What Is in the Database
 
 ```bash
@@ -138,6 +152,7 @@ sqlite3 /home/ned/data/market_sniffer_1999/market_sniffer.sqlite3
 | Rate-limit response | `python -m market_sniffer.cli data-health` | A provider throttled the run; wait and rerun safely. |
 | Interrupted backfill | `python -m market_sniffer.cli backfill --profile core --months 24 --resume` | The prior run stopped; completed target/range work can be skipped. |
 | Stale data-health warning | `python -m market_sniffer.cli status` | A source may not have refreshed or a daily update did not run. |
+| Missing metric values | `python -m market_sniffer.cli metrics health` | Canonical bars or FRED observations may not have enough history for that formula window. |
 | Migration error | `python -m market_sniffer.cli db init` | The local database schema did not migrate cleanly. |
 | Outside virtual environment | `which python` | The wrong Python environment is active. |
 

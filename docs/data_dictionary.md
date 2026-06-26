@@ -23,6 +23,10 @@ All tables are migration-managed by Alembic and use SQLite as the durable store.
 | `collector_run_items` | Per-target run items for retries/resume. | Unique run/target/date range. | Indefinite operational audit. |
 | `data_quality_events` | Visible data quality, freshness, entitlement, rate-limit, and malformed-data events. | Indexed type/severity/source/series/instrument/date. | Indefinite until resolved/archived policy exists. |
 | `source_discrepancies` | Primary-vs-validation comparisons. | Unique instrument/date/source pair/field/rule version. Stores values, differences, rule version, status, and structured basis/reason details. | Indefinite validation audit. |
+| `metric_definitions` | Executable derived metric catalog loaded from `config/metric_registry.yaml`. | Unique `metric_code`; stores category, formula version, frequency, unit, enabled flag, and definition JSON. | Indefinite. |
+| `metric_observations` | Formula-versioned derived metric values by as-of date. | Unique metric/as-of date/formula version. Links calculation run and stores canonical source lineage JSON. | Indefinite evidence foundation. |
+| `metric_calculation_runs` | Derived metric run audit records. | Indexed profile/date/status; stores attempted/succeeded/skipped/failed counters. | Indefinite operational audit. |
+| `evidence_events` | Rule-versioned evidence events generated from metric observations. | Unique event code/metric/as-of date/rule version. Links metric definition and observation. | Indefinite evidence audit. |
 | `system_settings` | Small local system metadata. | Primary key `key`. | Indefinite. |
 
 Missing data is never stored as zero. Canonical records retain source, raw observation or payload lineage, quality status, observation date/timestamp, retrieval timestamp, and unit.
@@ -34,3 +38,5 @@ Raw payload retention classes are `indefinite`, `quote`, `intraday`, and `valida
 Yahoo validation bars remain source-specific in `market_bars_daily`. They do not update `canonical_market_bars_daily`; comparisons are stored in `source_discrepancies`.
 
 Daily bar price basis values are controlled: `raw`, `split_adjusted`, `total_return_adjusted`, `provider_adjusted_unknown`, and `unknown`. Normal Massive/Polygon bars are `split_adjusted`. Current Yahoo validation `Close` rows are `provider_adjusted_unknown`; compatibility is determined by the active validation policy, not by treating Yahoo as canonical.
+
+Derived metrics consume canonical daily market bars and canonical FRED observations only. Metric observations preserve canonical row ids, raw payload ids, formula version, quality status, input window, and effective source date. Evidence events are generated from metric observations, not directly from provider payloads.
