@@ -112,6 +112,10 @@ class RawPayload(Base):
     response_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     compressed_reference: Mapped[str | None] = mapped_column(Text)
     error_context: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    retention_class: Mapped[str] = mapped_column(String(40), default="indefinite", index=True)
+    source_record_identifier: Mapped[str | None] = mapped_column(String(160), index=True)
+    protected: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    pruned_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class RawObservation(Base):
@@ -131,11 +135,13 @@ class RawObservation(Base):
     realtime_start: Mapped[date | None] = mapped_column(Date)
     realtime_end: Mapped[date | None] = mapped_column(Date)
     retrieved_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    quality_status: Mapped[str] = mapped_column(String(40), default="ok", index=True)
+    is_latest_vintage: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
 
 class CanonicalObservation(Base):
     __tablename__ = "canonical_observations"
-    __table_args__ = (UniqueConstraint("series_id", "observation_date", "realtime_start", "realtime_end", "source_id", name="uq_canonical_observation"),)
+    __table_args__ = (UniqueConstraint("series_id", "observation_date", "realtime_start", "source_id", name="uq_canonical_observation_vintage"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     series_id: Mapped[int] = mapped_column(ForeignKey("data_series.id"), index=True)
@@ -150,6 +156,7 @@ class CanonicalObservation(Base):
     realtime_start: Mapped[date | None] = mapped_column(Date)
     realtime_end: Mapped[date | None] = mapped_column(Date)
     retrieved_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    is_latest_vintage: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
 
 class MarketBarDaily(Base):
@@ -170,7 +177,37 @@ class MarketBarDaily(Base):
     source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), index=True)
     raw_payload_id: Mapped[int] = mapped_column(ForeignKey("raw_payloads.id"), index=True)
     adjusted: Mapped[bool] = mapped_column(Boolean, default=True)
+    price_basis: Mapped[str] = mapped_column(String(40), default="adjusted", index=True)
+    is_final: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     quality_status: Mapped[str] = mapped_column(String(40), default="ok", index=True)
+
+
+class CanonicalMarketBarDaily(Base):
+    __tablename__ = "canonical_market_bars_daily"
+    __table_args__ = (
+        UniqueConstraint("instrument_id", "trade_date", "price_basis", name="uq_canonical_market_bar_daily"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
+    trade_date: Mapped[date] = mapped_column(Date, index=True)
+    price_basis: Mapped[str] = mapped_column(String(40), default="adjusted", index=True)
+    open: Mapped[Decimal] = mapped_column(Numeric(28, 10))
+    high: Mapped[Decimal] = mapped_column(Numeric(28, 10))
+    low: Mapped[Decimal] = mapped_column(Numeric(28, 10))
+    close: Mapped[Decimal] = mapped_column(Numeric(28, 10))
+    adjusted_close: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    volume: Mapped[int | None] = mapped_column(Integer)
+    vwap: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
+    transactions: Mapped[int | None] = mapped_column(Integer)
+    canonical_source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), index=True)
+    source_market_bar_id: Mapped[int] = mapped_column(ForeignKey("market_bars_daily.id"), index=True)
+    raw_payload_id: Mapped[int] = mapped_column(ForeignKey("raw_payloads.id"), index=True)
+    quality_status: Mapped[str] = mapped_column(String(40), default="ok", index=True)
+    is_final: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    canonicalization_rule_version: Mapped[str] = mapped_column(String(40), index=True)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    updated_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class MarketBarIntraday(Base):
@@ -207,10 +244,14 @@ class QuoteSnapshot(Base):
     prior_close: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
     volume: Mapped[int | None] = mapped_column(Integer)
     market_state: Mapped[str | None] = mapped_column(String(40))
+    quote_delay_seconds: Mapped[int | None] = mapped_column(Integer)
     quote_quality: Mapped[str] = mapped_column(String(40), default="unknown", index=True)
+    is_tradeable_quote: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    is_stale: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     raw_payload_id: Mapped[int] = mapped_column(ForeignKey("raw_payloads.id"), index=True)
     received_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     quality_status: Mapped[str] = mapped_column(String(40), default="ok", index=True)
+    created_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class MarketSnapshot(Base):

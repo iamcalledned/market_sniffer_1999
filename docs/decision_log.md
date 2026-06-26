@@ -11,3 +11,8 @@
 - Intraday is scoped to a future watchlist and planned retention control; no broad tick archive is added.
 - Real-time quote polling is deferred.
 - Redis is intentionally not used for persistent Market Sniffer data in this milestone.
+- Source-specific daily bars and canonical daily bars are separate so downstream analytics never guess which price is authoritative.
+- U.S. equity daily market backfills default to the most recent completed exchange session.
+- FRED vintages are retained separately for current-view and point-in-time reconstruction.
+- Raw payload bodies have retention classes; lineage metadata is retained after eligible pruning.
+- Future quotes have explicit quality/freshness semantics and remain disabled by default.

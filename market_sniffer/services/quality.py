@@ -19,6 +19,8 @@ class DataQualityService:
         count = 0
         quotes = self.session.scalars(select(m.QuoteSnapshot).where(m.QuoteSnapshot.quote_timestamp_utc < cutoff)).all()
         for quote in quotes:
+            quote.is_stale = True
+            quote.quote_quality = "stale"
             self.repo.record_event(
                 "quote_freshness_problem",
                 "Quote snapshot is older than configured freshness tolerance.",
@@ -29,6 +31,27 @@ class DataQualityService:
             count += 1
         self.session.commit()
         return count
+
+    @staticmethod
+    def classify_quote(
+        quote_timestamp_utc: datetime | None,
+        received_at_utc: datetime,
+        provider_quality: str | None = None,
+        provider_delay_seconds: int | None = None,
+        stale_after_seconds: int = 1200,
+    ) -> tuple[str, bool]:
+        if provider_quality == "live" and provider_delay_seconds == 0:
+            return "live", False
+        if quote_timestamp_utc is None:
+            return "unknown", False
+        age = (received_at_utc - quote_timestamp_utc).total_seconds()
+        if age > stale_after_seconds:
+            return "stale", True
+        if provider_quality in {"delayed", "near_real_time", "market_closed", "last_known", "unavailable"}:
+            return provider_quality, False
+        if provider_delay_seconds is not None and provider_delay_seconds > 0:
+            return "delayed", False
+        return "unknown", False
 
     def summary(self) -> dict[str, int]:
         return self.repo.counts()

@@ -14,3 +14,11 @@ Every instrument entry includes symbol, display name, asset class, exchange, cur
 The configured FRED scope covers Treasury curve, yield curve, policy/liquidity, credit, inflation, labor, housing, growth/activity, financial conditions/stress, dollar/commodity context, volatility/risk, and recession context.
 
 The configured instrument universe covers broad market/global ETFs, U.S. sectors, style/factor ETFs, fixed income/credit/inflation-protected ETFs, commodity and dollar proxies, volatility/tactical proxies, and AI infrastructure/semiconductor watchlist names.
+
+Validate executable registry configuration with:
+
+```bash
+python -m market_sniffer.cli registry validate
+```
+
+Validation checks required fields, duplicate YAML keys, source references, canonical source references, collection profile references, future quote/intraday flags, and daily-market source precedence.

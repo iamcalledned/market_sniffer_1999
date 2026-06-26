@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Any, cast
 
 from sqlalchemy import func, select
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from market_sniffer.db import models as m
@@ -145,6 +146,9 @@ class WarehouseRepository:
         status_code: int | None = 200,
         result_status: str = "ok",
         error_context: dict[str, Any] | None = None,
+        retention_class: str = "indefinite",
+        source_record_identifier: str | None = None,
+        protected: bool = False,
     ) -> m.RawPayload:
         source = self.source(source_code)
         payload_hash = _hash_payload(response_payload)
@@ -167,6 +171,9 @@ class WarehouseRepository:
             payload_hash=payload_hash,
             response_payload=response_payload,
             error_context=error_context,
+            retention_class=retention_class,
+            source_record_identifier=source_record_identifier,
+            protected=protected,
         )
         self.session.add(payload)
         self.session.flush()
@@ -270,17 +277,46 @@ class WarehouseRepository:
             )
             self.session.add(raw)
             self.session.flush()
+        if realtime_start is None:
+            self.record_event(
+                "schema_change_detected",
+                f"FRED observation {series_code} {observation_date} missing realtime_start; using observation date for vintage key.",
+                "warning",
+                "fred",
+                series_code,
+                observation_date=observation_date,
+            )
+            realtime_start = observation_date
+        if realtime_end is None:
+            realtime_end = realtime_start
         existing = self.session.scalar(
             select(m.CanonicalObservation).where(
                 m.CanonicalObservation.series_id == series.id,
                 m.CanonicalObservation.observation_date == observation_date,
                 m.CanonicalObservation.realtime_start == realtime_start,
-                m.CanonicalObservation.realtime_end == realtime_end,
                 m.CanonicalObservation.source_id == source.id,
             )
         )
         if existing:
             return False, existing
+        self.session.execute(
+            update(m.CanonicalObservation)
+            .where(
+                m.CanonicalObservation.series_id == series.id,
+                m.CanonicalObservation.observation_date == observation_date,
+                m.CanonicalObservation.source_id == source.id,
+            )
+            .values(is_latest_vintage=False)
+        )
+        self.session.execute(
+            update(m.RawObservation)
+            .where(
+                m.RawObservation.series_id == series.id,
+                m.RawObservation.observed_date == observation_date,
+                m.RawObservation.source_id == source.id,
+            )
+            .values(is_latest_vintage=False)
+        )
         canonical = m.CanonicalObservation(
             series_id=series.id,
             source_id=source.id,
@@ -294,47 +330,195 @@ class WarehouseRepository:
             realtime_start=realtime_start,
             realtime_end=realtime_end,
             retrieved_at_utc=raw_payload.retrieved_at_utc,
+            is_latest_vintage=True,
         )
+        raw.is_latest_vintage = True
         self.session.add(canonical)
         self.session.flush()
         return True, canonical
 
-    def insert_daily_bar(self, symbol: str, source_code: str, raw_payload: m.RawPayload, bar: dict[str, Any]) -> bool:
+    def latest_fred_value(self, series_code: str, observation_date: date) -> m.CanonicalObservation | None:
+        series = self.series(series_code)
+        return self.session.scalar(
+            select(m.CanonicalObservation)
+            .where(
+                m.CanonicalObservation.series_id == series.id,
+                m.CanonicalObservation.observation_date == observation_date,
+                m.CanonicalObservation.is_latest_vintage.is_(True),
+            )
+            .order_by(m.CanonicalObservation.realtime_start.desc(), m.CanonicalObservation.retrieved_at_utc.desc())
+        )
+
+    def fred_value_as_of(
+        self, series_code: str, observation_date: date, as_of_date: date
+    ) -> m.CanonicalObservation | None:
+        series = self.series(series_code)
+        return self.session.scalar(
+            select(m.CanonicalObservation)
+            .where(
+                m.CanonicalObservation.series_id == series.id,
+                m.CanonicalObservation.observation_date == observation_date,
+                m.CanonicalObservation.realtime_start <= as_of_date,
+            )
+            .order_by(m.CanonicalObservation.realtime_start.desc(), m.CanonicalObservation.retrieved_at_utc.desc())
+        )
+
+    def insert_daily_bar(
+        self, symbol: str, source_code: str, raw_payload: m.RawPayload, bar: dict[str, Any]
+    ) -> tuple[bool, m.MarketBarDaily]:
         inst = self.instrument(symbol)
         source = self.source(source_code)
         trade_date = bar["trade_date"]
         if isinstance(trade_date, str):
             trade_date = date.fromisoformat(trade_date)
+        price_basis = bar.get("price_basis") or ("adjusted" if bar.get("adjusted", True) else "unadjusted")
         existing = self.session.scalar(
             select(m.MarketBarDaily).where(
                 m.MarketBarDaily.instrument_id == inst.id,
                 m.MarketBarDaily.trade_date == trade_date,
                 m.MarketBarDaily.source_id == source.id,
-                m.MarketBarDaily.adjusted == bool(bar.get("adjusted", True)),
+                m.MarketBarDaily.price_basis == price_basis,
             )
         )
         if existing:
-            return False
-        self.session.add(
-            m.MarketBarDaily(
-                instrument_id=inst.id,
-                trade_date=trade_date,
-                open=Decimal(str(bar["open"])),
-                high=Decimal(str(bar["high"])),
-                low=Decimal(str(bar["low"])),
-                close=Decimal(str(bar["close"])),
-                adjusted_close=Decimal(str(bar["adjusted_close"])) if bar.get("adjusted_close") is not None else None,
-                volume=bar.get("volume"),
-                vwap=Decimal(str(bar["vwap"])) if bar.get("vwap") is not None else None,
-                transaction_count=bar.get("transaction_count"),
-                source_id=source.id,
-                raw_payload_id=raw_payload.id,
-                adjusted=bool(bar.get("adjusted", True)),
-                quality_status="ok",
+            return False, existing
+        source_bar = m.MarketBarDaily(
+            instrument_id=inst.id,
+            trade_date=trade_date,
+            open=Decimal(str(bar["open"])),
+            high=Decimal(str(bar["high"])),
+            low=Decimal(str(bar["low"])),
+            close=Decimal(str(bar["close"])),
+            adjusted_close=Decimal(str(bar["adjusted_close"])) if bar.get("adjusted_close") is not None else None,
+            volume=bar.get("volume"),
+            vwap=Decimal(str(bar["vwap"])) if bar.get("vwap") is not None else None,
+            transaction_count=bar.get("transaction_count"),
+            source_id=source.id,
+            raw_payload_id=raw_payload.id,
+            adjusted=bool(bar.get("adjusted", True)),
+            price_basis=price_basis,
+            is_final=bool(bar.get("is_final", True)),
+            quality_status=bar.get("quality_status", "ok"),
+        )
+        self.session.add(source_bar)
+        self.session.flush()
+        return True, source_bar
+
+    def canonicalize_daily_bar(
+        self,
+        symbol: str,
+        trade_date: date,
+        source_precedence: list[str],
+        price_basis: str = "adjusted",
+        rule_version: str = "daily_bar_v1",
+        allow_yahoo_fallback: bool = False,
+        primary_failure: str | None = None,
+    ) -> tuple[bool, m.CanonicalMarketBarDaily | None]:
+        inst = self.instrument(symbol)
+        candidates = self.session.scalars(
+            select(m.MarketBarDaily).where(
+                m.MarketBarDaily.instrument_id == inst.id,
+                m.MarketBarDaily.trade_date == trade_date,
+                m.MarketBarDaily.price_basis == price_basis,
+                m.MarketBarDaily.quality_status == "ok",
+                m.MarketBarDaily.is_final.is_(True),
+            )
+        ).all()
+        by_source = {self.session.get(m.DataSource, bar.source_id).code: bar for bar in candidates}  # type: ignore[union-attr]
+        selected: m.MarketBarDaily | None = None
+        selected_source_code: str | None = None
+        for source_code in source_precedence:
+            if source_code == "yahoo" and not allow_yahoo_fallback and "massive" not in by_source:
+                continue
+            if source_code in by_source:
+                selected = by_source[source_code]
+                selected_source_code = source_code
+                break
+        if selected is None:
+            self.record_event(
+                "missing_expected_observation",
+                f"No valid canonical daily bar candidate for {symbol} {trade_date}.",
+                "warning",
+                symbol=symbol,
+                observation_date=trade_date,
+                details={"price_basis": price_basis, "source_precedence": source_precedence},
+            )
+            return False, None
+        if selected_source_code == "yahoo":
+            self.record_event(
+                "source_discrepancy",
+                f"Yahoo fallback selected for {symbol} {trade_date}; primary source unavailable.",
+                "warning",
+                "yahoo",
+                symbol=symbol,
+                observation_date=trade_date,
+                details={"primary_failure": primary_failure, "rule_version": rule_version},
+            )
+            self.record_discrepancy(
+                symbol,
+                trade_date,
+                "massive",
+                "yahoo",
+                "close",
+                "validation_unavailable",
+                validation_value=selected.close,
+                raw_payload_id=selected.raw_payload_id,
+            )
+        existing = self.session.scalar(
+            select(m.CanonicalMarketBarDaily).where(
+                m.CanonicalMarketBarDaily.instrument_id == inst.id,
+                m.CanonicalMarketBarDaily.trade_date == trade_date,
+                m.CanonicalMarketBarDaily.price_basis == price_basis,
             )
         )
+        now = utc_now()
+        if existing:
+            changed = (
+                existing.source_market_bar_id != selected.id
+                or existing.canonicalization_rule_version != rule_version
+                or existing.canonical_source_id != selected.source_id
+            )
+            existing.open = selected.open
+            existing.high = selected.high
+            existing.low = selected.low
+            existing.close = selected.close
+            existing.adjusted_close = selected.adjusted_close
+            existing.volume = selected.volume
+            existing.vwap = selected.vwap
+            existing.transactions = selected.transaction_count
+            existing.canonical_source_id = selected.source_id
+            existing.source_market_bar_id = selected.id
+            existing.raw_payload_id = selected.raw_payload_id
+            existing.quality_status = "ok" if selected_source_code != "yahoo" else "fallback"
+            existing.is_final = selected.is_final
+            existing.canonicalization_rule_version = rule_version
+            existing.updated_at_utc = now
+            self.session.flush()
+            return changed, existing
+        canonical = m.CanonicalMarketBarDaily(
+            instrument_id=inst.id,
+            trade_date=trade_date,
+            price_basis=price_basis,
+            open=selected.open,
+            high=selected.high,
+            low=selected.low,
+            close=selected.close,
+            adjusted_close=selected.adjusted_close,
+            volume=selected.volume,
+            vwap=selected.vwap,
+            transactions=selected.transaction_count,
+            canonical_source_id=selected.source_id,
+            source_market_bar_id=selected.id,
+            raw_payload_id=selected.raw_payload_id,
+            quality_status="ok" if selected_source_code != "yahoo" else "fallback",
+            is_final=selected.is_final,
+            canonicalization_rule_version=rule_version,
+            created_at_utc=now,
+            updated_at_utc=now,
+        )
+        self.session.add(canonical)
         self.session.flush()
-        return True
+        return True, canonical
 
     def insert_corporate_action(
         self, symbol: str, source_code: str, raw_payload: m.RawPayload, action: dict[str, Any]
@@ -450,10 +634,14 @@ class WarehouseRepository:
                 prior_close=Decimal(str(quote["prior_close"])) if quote.get("prior_close") is not None else None,
                 volume=quote.get("volume"),
                 market_state=quote.get("market_state"),
+                quote_delay_seconds=quote.get("quote_delay_seconds"),
                 quote_quality=quote.get("quote_quality", "unknown"),
+                is_tradeable_quote=bool(quote.get("is_tradeable_quote", False)),
+                is_stale=bool(quote.get("is_stale", False)),
                 raw_payload_id=raw_payload.id,
                 received_at_utc=utc_now(),
                 quality_status=quote.get("quality_status", "ok"),
+                created_at_utc=utc_now(),
             )
         )
         self.session.flush()
@@ -467,6 +655,7 @@ class WarehouseRepository:
             "raw_payloads": m.RawPayload,
             "canonical_observations": m.CanonicalObservation,
             "daily_bars": m.MarketBarDaily,
+            "canonical_daily_bars": m.CanonicalMarketBarDaily,
             "quote_snapshots": m.QuoteSnapshot,
             "corporate_actions": m.CorporateAction,
             "source_discrepancies": m.SourceDiscrepancy,

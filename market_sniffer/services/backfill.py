@@ -34,13 +34,14 @@ class BackfillService:
         only: Iterable[str] | None = None,
         dry_run: bool = False,
         continue_on_error: bool = False,
+        fred_end: date | None = None,
     ) -> int:
         only_set = set(only or [])
         parent = self.repo.start_run("backfill", profile, date_from=start, date_to=end)
         failures = 0
         try:
             if profile in {"core", "fred_macro"}:
-                failures += self._fred(start, end, only_set, parent.id, dry_run, continue_on_error)
+                failures += self._fred(start, fred_end or end, only_set, parent.id, dry_run, continue_on_error)
             if profile in {"core", "daily_market"}:
                 failures += self._daily_market(start, end, only_set, parent.id, dry_run, continue_on_error)
             if profile == "core":
@@ -167,7 +168,7 @@ class BackfillService:
                 end,
             )
             if not dry_run:
-                self.repo.record_discrepancy(
+                new_discrepancy = self.repo.record_discrepancy(
                     symbol,
                     end,
                     "massive",
@@ -175,16 +176,17 @@ class BackfillService:
                     "close",
                     "validation_unavailable",
                 )
-                self.repo.record_event(
-                    "source_discrepancy",
-                    "Yahoo validation sample is registered but live validation is disabled in v1.",
-                    "info",
-                    "yahoo",
-                    symbol=symbol,
-                    collector_run_id=run.id,
-                    observation_date=end,
-                    details={"status": "validation_unavailable"},
-                )
+                if new_discrepancy:
+                    self.repo.record_event(
+                        "source_discrepancy",
+                        "Yahoo validation sample is registered but live validation is disabled in v1.",
+                        "info",
+                        "yahoo",
+                        symbol=symbol,
+                        collector_run_id=run.id,
+                        observation_date=end,
+                        details={"status": "validation_unavailable"},
+                    )
             self.repo.finish_run(run, "succeeded")
             print(
                 f"yahoo validation {symbol} {start}..{end} "
@@ -193,10 +195,14 @@ class BackfillService:
 
     def _daily_market(self, start: date, end: date, only: set[str], parent_run_id: int, dry_run: bool, continue_on_error: bool) -> int:
         failures = 0
+        profile_cfg = self.registry.profiles.get("daily_market", {})
+        precedence = profile_cfg.get("canonical_source_precedence", ["massive", "yahoo"])
+        price_basis = profile_cfg.get("price_basis", "adjusted")
+        fallback_allowed = bool(profile_cfg.get("yahoo_fallback_allowed", False))
         for symbol, meta in self.registry.instruments.items():
             if only and symbol not in only and f"MASSIVE:{symbol}" not in only and f"POLYGON:{symbol}" not in only:
                 continue
-            if not meta.get("daily", True):
+            if not meta.get("daily", True) or "daily_market" not in meta.get("collection_profiles", []):
                 continue
             run = self.repo.start_run("massive_daily_bars", "daily_market", "massive", parent_run_id, "instrument", symbol, start, end)
             try:
@@ -214,10 +220,18 @@ class BackfillService:
                             self.repo.record_event("suspicious_value_jump", f"Malformed market bar for {symbol}", "error", "massive", symbol=symbol, collector_run_id=run.id, observation_date=bar.trade_date)
                             run.failed_count += 1
                             continue
-                        if self.repo.insert_daily_bar(symbol, "massive", raw_payload, bar.asdict()):
+                        inserted, source_bar = self.repo.insert_daily_bar(symbol, "massive", raw_payload, bar.asdict())
+                        if inserted:
                             run.inserted_count += 1
                         else:
                             run.skipped_count += 1
+                        self.repo.canonicalize_daily_bar(
+                            symbol,
+                            source_bar.trade_date,
+                            precedence,
+                            price_basis=price_basis,
+                            allow_yahoo_fallback=fallback_allowed,
+                        )
                 self.repo.finish_run(run, "succeeded" if run.failed_count == 0 else "failed")
                 print(f"massive {symbol} {start}..{end} fetched={run.fetched_count} inserted={run.inserted_count} skipped={run.skipped_count} failed={run.failed_count}")
             except ProviderError as exc:

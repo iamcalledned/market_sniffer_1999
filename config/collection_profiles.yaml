@@ -6,6 +6,9 @@ profiles:
   daily_market:
     description: "Daily OHLCV bars and available corporate actions for registered active instruments."
     source: massive
+    canonical_source_precedence: ["massive", "yahoo"]
+    price_basis: adjusted
+    yahoo_fallback_allowed: false
     frequency: daily
     retention: indefinite
     batch_size: 10

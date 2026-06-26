@@ -14,6 +14,7 @@ cp .env.example .env
 python -m market_sniffer.cli db init
 python -m market_sniffer.cli registry validate
 python -m market_sniffer.cli validate-sources --allow-missing
+python -m market_sniffer.cli verify-foundation --days 5
 python -m market_sniffer.cli backfill --profile core --months 24
 ```
 
@@ -32,10 +33,12 @@ python -m market_sniffer.cli db summary
 python -m market_sniffer.cli registry validate
 python -m market_sniffer.cli registry show FRED:DGS10
 python -m market_sniffer.cli validate-sources
+python -m market_sniffer.cli verify-foundation --days 5
 python -m market_sniffer.cli backfill --profile core --months 24
 python -m market_sniffer.cli collect --profile daily_market
 python -m market_sniffer.cli status
 python -m market_sniffer.cli data-health
+python -m market_sniffer.cli retention prune-raw-payloads --scope quote --dry-run
 python -m market_sniffer.cli inspect series FRED:DGS10 --from 2024-01-01 --to 2026-01-01
 python -m market_sniffer.cli inspect instrument MASSIVE:SPY --from 2024-01-01 --to 2026-01-01
 ```
@@ -47,6 +50,12 @@ Massive / Polygon is primary and canonical for daily equity and ETF bars, future
 FRED is canonical for macroeconomic, rates, credit, inflation, labor, housing, growth, liquidity, financial-condition, dollar, commodity, volatility, and recession series.
 
 Yahoo Finance is validation and enrichment now, plus an explicit future quote option. Yahoo is not silently promoted over Massive/Polygon or FRED.
+
+Daily market bars are stored twice by design: `market_bars_daily` keeps source-specific bars, while `canonical_market_bars_daily` stores one downstream bar per instrument, trade date, and price basis. Registry source precedence selects Massive/Polygon first. Yahoo fallback requires explicit configuration, records quality/discrepancy evidence, and preserves source lineage.
+
+Default market backfills end at the most recent completed U.S. equity session using an exchange calendar. Explicit `--to` overrides this and warns when it may include incomplete daily market data. FRED collection can independently include observations through the current date.
+
+Run `verify-foundation --days 5` successfully before the full 24-month production seed.
 
 ## Configuration
 

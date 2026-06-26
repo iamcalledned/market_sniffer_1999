@@ -16,8 +16,14 @@ from market_sniffer.db import models as m
 from market_sniffer.db.engine import assert_sqlite_pragmas, create_db_engine, session_factory
 from market_sniffer.db.repository import WarehouseRepository
 from market_sniffer.services.backfill import BackfillService
-from market_sniffer.services.dates import default_backfill_window
+from market_sniffer.services.dates import (
+    MarketCalendar,
+    default_backfill_window,
+    market_backfill_window,
+    warn_if_possible_incomplete_market_date,
+)
 from market_sniffer.services.quality import DataQualityService
+from market_sniffer.services.retention import RetentionService
 from market_sniffer.services.registry_service import RegistryError, describe_key, load_registry
 from market_sniffer.settings import PROJECT_ROOT, get_settings
 
@@ -80,9 +86,19 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     command.upgrade(_alembic_config(), "head")
     registry = load_registry()
     settings = get_settings()
-    start, end = default_backfill_window(months=args.months)
-    start = _parse_date(args.date_from) or start
-    end = _parse_date(args.date_to) or end
+    fred_start, fred_end = default_backfill_window(months=args.months)
+    market_start, market_end = market_backfill_window(months=args.months)
+    start = _parse_date(args.date_from) or (fred_start if args.profile == "fred_macro" else market_start)
+    explicit_end = _parse_date(args.date_to)
+    end = explicit_end or (fred_end if args.profile == "fred_macro" else market_end)
+    if explicit_end and args.profile in {"core", "daily_market"}:
+        warning = warn_if_possible_incomplete_market_date(explicit_end)
+        if warning:
+            print(f"warning: {warning}", file=sys.stderr)
+    if args.profile in {"core", "daily_market"}:
+        print(f"effective_market_end_date={end}")
+    if args.profile in {"core", "fred_macro"}:
+        print(f"effective_fred_end_date={explicit_end or fred_end}")
     fixture = args.fixture
     fred = FixtureFredClient() if fixture else FredApiClient(settings.fred_api_key)
     market = FixtureMassiveClient() if fixture else MassiveClient(settings.massive_api_key)
@@ -99,6 +115,7 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             only=args.only or None,
             dry_run=args.dry_run,
             continue_on_error=args.continue_on_error,
+            fred_end=explicit_end or fred_end,
         )
     return 1 if failures and not args.continue_on_error else 0
 
@@ -131,6 +148,68 @@ def cmd_data_health(args: argparse.Namespace) -> int:
         print(f"unresolved_quality_events={len(unresolved)}")
         print(json.dumps(summary, indent=2, sort_keys=True))
     return 1 if unresolved and args.fail_on_events else 0
+
+
+def cmd_retention(args: argparse.Namespace) -> int:
+    session, _ = _session()
+    with session:
+        result = RetentionService(session).prune_raw_payloads(
+            args.scope,
+            dry_run=args.dry_run,
+            retention_days=args.retention_days,
+        )
+        print(json.dumps(result.__dict__, indent=2, sort_keys=True))
+    return 0
+
+
+def cmd_verify_foundation(args: argparse.Namespace) -> int:
+    settings = get_settings()
+    if not args.fixture and (not settings.fred_api_key or not settings.massive_api_key):
+        print("verify-foundation requires FRED_API_KEY and MASSIVE_API_KEY/POLYGON_API_KEY unless --fixture is used")
+        return 1
+    command.upgrade(_alembic_config(), "head")
+    registry = load_registry()
+    start, end = MarketCalendar().recent_completed_range(args.days)
+    fred = FixtureFredClient() if args.fixture else FredApiClient(settings.fred_api_key)
+    market = FixtureMassiveClient() if args.fixture else MassiveClient(settings.massive_api_key)
+    quote = FixtureYahooQuoteClient() if args.fixture else YahooQuoteClient(settings.yahoo_enabled, settings.yahoo_quotes_enabled)
+    targets = ["DGS10", "BAMLH0A0HYM2", "SPY", "QQQ"]
+    session, _ = _session()
+    with session:
+        repo = WarehouseRepository(session)
+        repo.bootstrap_registry(registry)
+        service = BackfillService(session, registry, fred, market, quote)
+        failures = service.backfill("core", start, end, only=targets, continue_on_error=args.continue_on_error)
+        first_counts = repo.counts()
+        rerun_failures = service.backfill("core", start, end, only=targets, continue_on_error=args.continue_on_error)
+        second_counts = repo.counts()
+        DataQualityService(session).check_quote_freshness()
+        sample_bar = session.scalar(select(m.CanonicalMarketBarDaily).limit(1))
+        sample_obs = session.scalar(select(m.CanonicalObservation).limit(1))
+        report = {
+            "range": {"from": start.isoformat(), "to": end.isoformat()},
+            "failures": failures,
+            "rerun_failures": rerun_failures,
+            "first_counts": first_counts,
+            "second_counts": second_counts,
+            "lineage_samples": {
+                "canonical_bar": {
+                    "source_market_bar_id": sample_bar.source_market_bar_id,
+                    "raw_payload_id": sample_bar.raw_payload_id,
+                }
+                if sample_bar
+                else None,
+                "fred_observation": {
+                    "raw_observation_id": sample_obs.raw_observation_id,
+                    "raw_payload_id": sample_obs.raw_payload_id,
+                    "is_latest_vintage": sample_obs.is_latest_vintage,
+                }
+                if sample_obs
+                else None,
+            },
+        }
+        print(json.dumps(report, indent=2, sort_keys=True, default=str))
+    return 1 if failures or rerun_failures else 0
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
@@ -242,6 +321,14 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--fail-on-events", action="store_true")
     health.set_defaults(func=cmd_data_health)
 
+    retention = sub.add_parser("retention")
+    retention_sub = retention.add_subparsers(dest="retention_command", required=True)
+    prune = retention_sub.add_parser("prune-raw-payloads")
+    prune.add_argument("--scope", choices=["quote", "intraday", "validation"], required=True)
+    prune.add_argument("--retention-days", type=int)
+    prune.add_argument("--dry-run", action="store_true")
+    retention.set_defaults(func=cmd_retention)
+
     inspect = sub.add_parser("inspect")
     inspect.add_argument("inspect_type", choices=["series", "instrument"])
     inspect.add_argument("key")
@@ -253,6 +340,12 @@ def build_parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate-sources")
     validate.add_argument("--allow-missing", action="store_true")
     validate.set_defaults(func=cmd_validate_sources)
+
+    verify = sub.add_parser("verify-foundation")
+    verify.add_argument("--days", type=int, default=5)
+    verify.add_argument("--fixture", action="store_true")
+    verify.add_argument("--continue-on-error", action="store_true")
+    verify.set_defaults(func=cmd_verify_foundation)
     return parser
 
 

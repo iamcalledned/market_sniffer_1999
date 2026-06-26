@@ -31,7 +31,10 @@ class YahooQuoteClient:
             "prior_close": info.get("previous_close"),
             "volume": info.get("last_volume"),
             "market_state": None,
-            "quote_quality": "unknown_delay",
+            "quote_delay_seconds": None,
+            "quote_quality": "unknown",
+            "is_tradeable_quote": False,
+            "is_stale": False,
         }
         return payload, quote
 
@@ -48,6 +51,9 @@ class FixtureYahooQuoteClient:
             "prior_close": price - Decimal("1.00"),
             "volume": 123456,
             "market_state": "regular",
-            "quote_quality": "fixture",
+            "quote_delay_seconds": 900,
+            "quote_quality": "delayed",
+            "is_tradeable_quote": False,
+            "is_stale": False,
         }
         return {"symbol": symbol, "fixture": True, "quote": {k: str(v) for k, v in quote.items()}}, quote
