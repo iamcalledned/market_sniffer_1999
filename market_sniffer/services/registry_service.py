@@ -15,6 +15,7 @@ class Registry:
     series: dict[str, dict[str, Any]]
     instruments: dict[str, dict[str, Any]]
     profiles: dict[str, dict[str, Any]]
+    validation: dict[str, Any]
 
 
 class RegistryError(ValueError):
@@ -48,13 +49,25 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 
 def load_registry(config_dir: Path | None = None) -> Registry:
     root = config_dir or PROJECT_ROOT / "config"
+    collection_config = _load_yaml(root / "collection_profiles.yaml")
     sources = _load_yaml(root / "source_registry.yaml").get("sources", {})
     series = _load_yaml(root / "series_registry.yaml").get("series", {})
     instruments = _load_yaml(root / "instrument_registry.yaml").get("instruments", {})
-    profiles = _load_yaml(root / "collection_profiles.yaml").get("profiles", {})
-    registry = Registry(sources=sources, series=series, instruments=instruments, profiles=profiles)
+    profiles = collection_config.get("profiles", {})
+    validation = collection_config.get("validation", {})
+    registry = Registry(sources=sources, series=series, instruments=instruments, profiles=profiles, validation=validation)
     validate_registry(registry)
     return registry
+
+
+VALID_PRICE_BASES = {"raw", "split_adjusted", "total_return_adjusted", "provider_adjusted_unknown", "unknown"}
+VALID_DISCREPANCY_STATUSES = {
+    "match",
+    "minor_difference",
+    "material_difference",
+    "not_comparable",
+    "validation_unavailable",
+}
 
 
 def validate_registry(registry: Registry) -> None:
@@ -136,6 +149,41 @@ def validate_registry(registry: Registry) -> None:
             for source_code in profile["canonical_source_precedence"]:
                 if source_code not in registry.sources:
                     raise RegistryError(f"profile {name} precedence references unknown source {source_code}")
+        if profile.get("price_basis") and profile["price_basis"] not in VALID_PRICE_BASES:
+            raise RegistryError(f"profile {name} has invalid price_basis {profile['price_basis']}")
+    daily_validation = registry.validation.get("daily_bars")
+    if not isinstance(daily_validation, dict):
+        raise RegistryError("validation.daily_bars missing")
+    for field in [
+        "comparison_rule_version",
+        "source_price_basis",
+        "allowed_price_basis_pairs",
+        "close",
+        "volume",
+    ]:
+        if field not in daily_validation:
+            raise RegistryError(f"validation.daily_bars missing {field}")
+    source_basis = daily_validation["source_price_basis"]
+    if not isinstance(source_basis, dict):
+        raise RegistryError("validation.daily_bars.source_price_basis must be a mapping")
+    for source_code, basis in source_basis.items():
+        if source_code not in registry.sources:
+            raise RegistryError(f"validation source_price_basis references unknown source {source_code}")
+        if basis not in VALID_PRICE_BASES:
+            raise RegistryError(f"validation source {source_code} has invalid price_basis {basis}")
+    for pair in daily_validation["allowed_price_basis_pairs"]:
+        if not isinstance(pair, list) or len(pair) != 2:
+            raise RegistryError(f"validation allowed_price_basis_pairs entry must be a two-item list: {pair}")
+        for basis in pair:
+            if basis not in VALID_PRICE_BASES:
+                raise RegistryError(f"validation allowed_price_basis_pairs has invalid basis {basis}")
+    for field in ["close", "volume"]:
+        thresholds = daily_validation[field]
+        for key in ["match_percent", "minor_difference_percent", "material_difference_percent"]:
+            if key not in thresholds:
+                raise RegistryError(f"validation.daily_bars.{field} missing {key}")
+            if float(thresholds[key]) < 0:
+                raise RegistryError(f"validation.daily_bars.{field}.{key} must be non-negative")
 
 
 def describe_key(registry: Registry, key: str) -> dict[str, Any]:

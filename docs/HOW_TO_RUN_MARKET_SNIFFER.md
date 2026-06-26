@@ -75,6 +75,16 @@ python -m market_sniffer.cli collect --profile core
 
 For daily market bars, this defaults to the last completed U.S. market session. FRED can use its own source update cadence.
 
+## Yahoo Validation
+
+Yahoo is validation-only. It never replaces Massive/Polygon canonical bars while a valid Massive/Polygon bar exists. Validation compares only compatible price bases, currently `split_adjusted` Massive/Polygon close and volume against `split_adjusted` Yahoo close and volume. Quote polling remains disabled.
+
+To revalidate a small completed range:
+
+```bash
+python -m market_sniffer.cli validate-history --symbols SPY --symbols QQQ --from 2026-06-18 --to 2026-06-25
+```
+
 ## Check Data Health
 
 ```bash
@@ -93,7 +103,19 @@ python -m market_sniffer.cli inspect series FRED:DGS10 --from 2024-01-01 --to 20
 python -m market_sniffer.cli inspect instrument MASSIVE:SPY --from 2024-01-01 --to 2026-01-01
 ```
 
-The configured production database path verified on 2026-06-26 was `/home/ned/data/market_sniffer_1999/market_sniffer.sqlite3`. A SQLite shell check works with:
+Default local database:
+
+```text
+runtime/market_sniffer.sqlite3
+```
+
+Current production installation on Ned's machine:
+
+```text
+/home/ned/data/market_sniffer_1999/market_sniffer.sqlite3
+```
+
+A SQLite shell check works with:
 
 ```bash
 sqlite3 /home/ned/data/market_sniffer_1999/market_sniffer.sqlite3

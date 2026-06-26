@@ -43,6 +43,7 @@ class DailyBar:
     vwap: Decimal | None = None
     transaction_count: int | None = None
     adjusted: bool = True
+    price_basis: str = "split_adjusted"
 
     def asdict(self) -> dict[str, Any]:
         return {
@@ -56,6 +57,7 @@ class DailyBar:
             "vwap": self.vwap,
             "transaction_count": self.transaction_count,
             "adjusted": self.adjusted,
+            "price_basis": self.price_basis,
         }
 
 

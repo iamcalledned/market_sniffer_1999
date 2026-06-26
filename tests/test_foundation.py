@@ -46,11 +46,13 @@ def test_duplicate_daily_bar_idempotency(session):
     bar = DailyBar(date(2026, 1, 2), Decimal("1"), Decimal("2"), Decimal("1"), Decimal("2"), Decimal("2"), 10)
     inserted, source_bar = repo.insert_daily_bar("SPY", "massive", payload, bar.asdict())
     assert inserted is True
+    assert source_bar.price_basis == "split_adjusted"
     inserted_again, _ = repo.insert_daily_bar("SPY", "massive", payload, bar.asdict())
     assert inserted_again is False
     changed, canonical = repo.canonicalize_daily_bar("SPY", source_bar.trade_date, ["massive", "yahoo"])
     assert changed is True
     assert canonical is not None
+    assert canonical.price_basis == "split_adjusted"
     assert canonical.source_market_bar_id == source_bar.id
     session.commit()
     assert repo.counts()["daily_bars"] == 1
@@ -224,6 +226,8 @@ def test_yahoo_historical_validation_stores_bars_and_does_not_change_canonical(s
     assert len(yahoo_bars) == 3
     assert len(canonical) == 3
     assert all(row.canonical_source_id == massive_source.id for row in canonical)
+    assert {row.price_basis for row in massive_bars + yahoo_bars} == {"split_adjusted"}
+    assert {row.price_basis for row in canonical} == {"split_adjusted"}
     assert {row.field_name for row in discrepancies} == {"close", "volume"}
     assert {row.status for row in discrepancies} == {"match"}
     counts = repo.counts()
@@ -237,9 +241,10 @@ def test_yahoo_historical_validation_stores_bars_and_does_not_change_canonical(s
 def test_yahoo_discrepancy_classification_material_and_not_comparable(session):
     repo = WarehouseRepository(session)
     service = BackfillService(session, load_registry(), FixtureFredClient(), FixtureMassiveClient())
-    assert service._classify_difference(Decimal("100"), Decimal("100.10"), Decimal("0.002"), Decimal("0.01")) == "minor_difference"
-    assert service._classify_difference(Decimal("100"), Decimal("103"), Decimal("0.002"), Decimal("0.01")) == "material_difference"
-    assert service._classify_difference(Decimal("0"), Decimal("1"), Decimal("0.002"), Decimal("0.01")) == "not_comparable"
+    assert service._classify_difference(Decimal("100"), Decimal("100.00000001"), Decimal("0.000001"), Decimal("0.002"), Decimal("0.01")) == "match"
+    assert service._classify_difference(Decimal("100"), Decimal("100.10"), Decimal("0.000001"), Decimal("0.002"), Decimal("0.01")) == "minor_difference"
+    assert service._classify_difference(Decimal("100"), Decimal("103"), Decimal("0.000001"), Decimal("0.002"), Decimal("0.01")) == "material_difference"
+    assert service._classify_difference(Decimal("0"), Decimal("1"), Decimal("0.000001"), Decimal("0.002"), Decimal("0.01")) == "material_difference"
     payload = repo.raw_payload("massive", "fixture", {"symbol": "SPY"}, {"source": "massive"})
     _, massive_bar = repo.insert_daily_bar(
         "SPY",
@@ -254,12 +259,78 @@ def test_yahoo_discrepancy_classification_material_and_not_comparable(session):
             "adjusted_close": None,
             "volume": 100,
             "adjusted": False,
+            "price_basis": "raw",
         },
     )
-    yahoo_bar = DailyBar(massive_bar.trade_date, Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100)
+    registry = load_registry()
+    incompatible_registry = Registry(
+        sources=registry.sources,
+        series=registry.series,
+        instruments=registry.instruments,
+        profiles=registry.profiles,
+        validation={
+            **registry.validation,
+            "daily_bars": {
+                **registry.validation["daily_bars"],
+                "source_price_basis": {"massive": "raw", "yahoo": "split_adjusted"},
+                "allowed_price_basis_pairs": [["split_adjusted", "split_adjusted"]],
+            },
+        },
+    )
+    service = BackfillService(session, incompatible_registry, FixtureFredClient(), FixtureMassiveClient())
+    yahoo_bar = DailyBar(massive_bar.trade_date, Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100, price_basis="split_adjusted")
     service._compare_yahoo_bar("SPY", massive_bar.trade_date, yahoo_bar, payload.id, collector_run_id=None)
     discrepancy = session.scalar(select(m.SourceDiscrepancy).where(m.SourceDiscrepancy.field_name == "close"))
     assert discrepancy.status == "not_comparable"
+    assert discrepancy.details["primary_price_basis"] == "raw"
+    assert discrepancy.details["validation_price_basis"] == "split_adjusted"
+
+
+def test_rule_version_results_are_not_confused(session):
+    repo = WarehouseRepository(session)
+    payload = repo.raw_payload("massive", "fixture", {"symbol": "SPY"}, {"source": "massive"})
+    repo.record_discrepancy(
+        "SPY",
+        date(2026, 1, 2),
+        "massive",
+        "yahoo",
+        "close",
+        "not_comparable",
+        comparison_rule_version="validation_v1",
+    )
+    service = BackfillService(session, load_registry(), FixtureFredClient(), FixtureMassiveClient())
+    repo.insert_daily_bar(
+        "SPY",
+        "massive",
+        payload,
+        DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100).asdict(),
+    )
+    yahoo_bar = DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100)
+    service._compare_yahoo_bar("SPY", date(2026, 1, 2), yahoo_bar, payload.id, collector_run_id=None)
+    rows = session.scalars(select(m.SourceDiscrepancy).where(m.SourceDiscrepancy.field_name == "close")).all()
+    assert {row.comparison_rule_version for row in rows} == {"validation_v1", "daily_bar_validation_v2"}
+    assert {row.status for row in rows} == {"not_comparable", "match"}
+
+
+def test_validate_history_idempotent_and_preserves_canonical(session):
+    registry = load_registry()
+    service = BackfillService(
+        session, registry, FixtureFredClient(), FixtureMassiveClient(), validation_client=FixtureYahooHistoricalClient()
+    )
+    first = service.validate_history(["SPY", "QQQ"], date(2026, 1, 2), date(2026, 1, 6))
+    repo = WarehouseRepository(session)
+    massive_source = repo.source("massive")
+    canonical = session.scalars(select(m.CanonicalMarketBarDaily)).all()
+    assert all(row.canonical_source_id == massive_source.id for row in canonical)
+    counts = repo.counts()
+    second = service.validate_history(["SPY", "QQQ"], date(2026, 1, 2), date(2026, 1, 6))
+    rerun_counts = repo.counts()
+    assert first == second
+    assert rerun_counts["daily_bars"] == counts["daily_bars"]
+    assert rerun_counts["canonical_daily_bars"] == counts["canonical_daily_bars"]
+    assert rerun_counts["source_discrepancies"] == counts["source_discrepancies"]
+    assert first["SPY"]["match"] == 6
+    assert first["QQQ"]["match"] == 6
 
 
 def test_dynamic_24_calendar_month_window():
@@ -308,6 +379,9 @@ def test_future_quote_polling_disabled_by_default():
     assert registry.profiles["future_realtime_quote_watchlist"]["enabled_by_default"] is False
     assert registry.sources["yahoo"]["enabled"] is True
     assert registry.sources["yahoo"]["future_quote_capability"] is True
+    assert registry.validation["daily_bars"]["comparison_rule_version"] == "daily_bar_validation_v2"
+    assert registry.validation["daily_bars"]["source_price_basis"]["massive"] == "split_adjusted"
+    assert registry.validation["daily_bars"]["source_price_basis"]["yahoo"] == "split_adjusted"
 
 
 def test_yahoo_historical_validation_flag_is_separate_from_quotes(monkeypatch):
@@ -369,6 +443,7 @@ def test_registry_validation_failures():
         series={"BAD": {**registry.series["DGS10"], "source": "missing"}},
         instruments=registry.instruments,
         profiles=registry.profiles,
+        validation=registry.validation,
     )
     with pytest.raises(RegistryError):
         validate_registry(bad_source)
@@ -377,6 +452,31 @@ def test_registry_validation_failures():
         series={"BAD": {**registry.series["DGS10"], "collection_profile": "missing"}},
         instruments=registry.instruments,
         profiles=registry.profiles,
+        validation=registry.validation,
     )
     with pytest.raises(RegistryError):
         validate_registry(bad_profile)
+    bad_basis = Registry(
+        sources=registry.sources,
+        series=registry.series,
+        instruments=registry.instruments,
+        profiles={**registry.profiles, "daily_market": {**registry.profiles["daily_market"], "price_basis": "vague"}},
+        validation=registry.validation,
+    )
+    with pytest.raises(RegistryError):
+        validate_registry(bad_basis)
+    bad_pair = Registry(
+        sources=registry.sources,
+        series=registry.series,
+        instruments=registry.instruments,
+        profiles=registry.profiles,
+        validation={
+            **registry.validation,
+            "daily_bars": {
+                **registry.validation["daily_bars"],
+                "allowed_price_basis_pairs": [["split_adjusted", "mystery"]],
+            },
+        },
+    )
+    with pytest.raises(RegistryError):
+        validate_registry(bad_pair)

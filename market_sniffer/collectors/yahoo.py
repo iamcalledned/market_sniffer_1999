@@ -24,7 +24,14 @@ class YahooHistoricalClient:
             raise MissingCredentialError("Install the yahoo extra to use Yahoo historical validation") from exc
         ticker = yf.Ticker(symbol)
         # yfinance end is exclusive for history(); include the requested end date.
-        frame = ticker.history(start=start.isoformat(), end=(end + timedelta(days=1)).isoformat(), interval="1d")
+        # auto_adjust=False keeps Close on Yahoo's split-adjusted, non-dividend-adjusted basis.
+        frame = ticker.history(
+            start=start.isoformat(),
+            end=(end + timedelta(days=1)).isoformat(),
+            interval="1d",
+            auto_adjust=False,
+            actions=True,
+        )
         if frame is None or frame.empty:
             raise ProviderError(f"Yahoo returned no historical daily bars for {symbol}")
         rows: list[dict[str, Any]] = []
@@ -51,7 +58,8 @@ class YahooHistoricalClient:
                     close=Decimal(str(raw["close"])),
                     adjusted_close=Decimal(str(adjusted_close)) if adjusted_close is not None else None,
                     volume=raw["volume"],
-                    adjusted=raw["adj_close"] is not None,
+                    adjusted=True,
+                    price_basis="split_adjusted",
                 )
             )
         return {"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "rows": rows}, bars
@@ -74,6 +82,8 @@ class FixtureYahooHistoricalClient:
                     close=base + Decimal("0.25"),
                     adjusted_close=base + Decimal("0.25"),
                     volume=1000000 + idx,
+                    adjusted=True,
+                    price_basis="split_adjusted",
                 )
             )
         return {"symbol": symbol, "resultsCount": len(bars), "fixture": True}, bars

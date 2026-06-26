@@ -32,6 +32,10 @@ Source precedence lives in `config/collection_profiles.yaml`. The initial rule i
 
 Yahoo historical validation is a separate flow. It stores Yahoo source bars and discrepancy records but does not alter canonical selection while a valid Massive/Polygon bar exists.
 
+Daily bars carry an explicit `price_basis`. Massive/Polygon aggregate requests use `adjusted=true` and are stored as `split_adjusted`. Yahoo validation calls `yfinance.history(..., auto_adjust=False, actions=True)` and stores Close/OHLCV as `split_adjusted`, while preserving `Adj Close` separately. Legacy Yahoo rows collected before that explicit call are labeled `total_return_adjusted`.
+
+Validation policy lives in `config/collection_profiles.yaml`. Current comparisons use `daily_bar_validation_v2`, compare only allowed basis pairs, and keep older rule-version discrepancy rows for audit instead of overwriting them.
+
 ## FRED Vintages
 
 FRED observations retain `realtime_start`, `realtime_end`, retrieval timestamp, raw payload, raw observation, quality status, and `is_latest_vintage`. New vintages are inserted separately; older vintages are not overwritten.

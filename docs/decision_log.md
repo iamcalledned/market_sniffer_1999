@@ -18,3 +18,4 @@
 - Future quotes have explicit quality/freshness semantics and remain disabled by default.
 - Yahoo historical validation is implemented as source-specific bars plus discrepancies, not as canonical promotion.
 - `--force` is constrained to explicit target/range reload workflows; `--resume` skips previously succeeded target/range runs.
+- Daily-bar validation uses explicit price-basis semantics. Massive/Polygon and current Yahoo validation rows are compared only on compatible `split_adjusted` basis under `daily_bar_validation_v2`; older discrepancy rule versions remain auditable.

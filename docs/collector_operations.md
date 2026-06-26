@@ -72,13 +72,21 @@ This runs small FRED and Massive/Polygon checks, and Yahoo historical validation
 
 Yahoo historical validation is registry-driven by the `validation` profile. It retrieves bounded daily history for the validation sample, stores Yahoo rows in `market_bars_daily`, compares matching Massive/Polygon source bars, and writes `source_discrepancies`.
 
-Initial comparison policy:
+Current comparison policy:
 
-- close: match if equal, minor within 0.2%, material at or above 1%;
-- volume: match if equal, minor within 2%, material at or above 10%;
-- adjusted/unadjusted basis mismatch: `not_comparable`;
+- rule version: `daily_bar_validation_v2`;
+- price basis: compare only allowed pairs from `config/collection_profiles.yaml`;
+- close: match within configured match tolerance, minor within 0.2%, material at or above 1%;
+- volume: match within configured match tolerance, minor within 2%, material at or above 10%;
+- incompatible basis pair: `not_comparable` with structured reason details;
 - missing Massive bar or Yahoo failure: `validation_unavailable`;
 - date alignment: compare matching completed trade dates only.
+
+Revalidate a bounded range with:
+
+```bash
+python -m market_sniffer.cli validate-history --symbols SPY --symbols QQQ --from 2026-06-18 --to 2026-06-25
+```
 
 Schema changes: add a SQLAlchemy model change and a new Alembic revision. Do not hand-edit a live SQLite schema.
 

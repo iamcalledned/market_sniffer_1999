@@ -59,7 +59,13 @@ Default market backfills end at the most recent completed U.S. equity session us
 
 Run `verify-foundation --days 5` successfully before the full 24-month production seed.
 
-Yahoo historical validation runs through the `validation` profile when `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. It stores Yahoo source-specific daily bars, compares close and volume against Massive/Polygon over matching completed sessions, records discrepancies, and never changes canonical bar selection.
+Yahoo historical validation runs through the `validation` profile when `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. It stores Yahoo source-specific daily bars, compares close and volume against Massive/Polygon over matching completed sessions only when price bases are compatible, records discrepancies by comparison rule version, and never changes canonical bar selection.
+
+To re-run bounded historical validation:
+
+```bash
+python -m market_sniffer.cli validate-history --symbols SPY --symbols QQQ --from 2026-06-18 --to 2026-06-25
+```
 
 ## Configuration
 

@@ -142,6 +142,35 @@ def cmd_collect(args: argparse.Namespace) -> int:
     return cmd_backfill(args)
 
 
+def cmd_validate_history(args: argparse.Namespace) -> int:
+    command.upgrade(_alembic_config(), "head")
+    settings = get_settings()
+    registry = load_registry()
+    start = _parse_date(args.date_from)
+    end = _parse_date(args.date_to)
+    if start is None or end is None:
+        print("validate-history requires --from and --to", file=sys.stderr)
+        return 2
+    if not args.fixture and (not settings.massive_api_key or not settings.yahoo_historical_validation_enabled):
+        print(
+            "validate-history requires MASSIVE_API_KEY/POLYGON_API_KEY and "
+            "YAHOO_HISTORICAL_VALIDATION_ENABLED=true unless --fixture is used",
+            file=sys.stderr,
+        )
+        return 1
+    market = FixtureMassiveClient() if args.fixture else MassiveClient(settings.massive_api_key)
+    validation = FixtureYahooHistoricalClient() if args.fixture else YahooHistoricalClient(settings.yahoo_historical_validation_enabled)
+    session, _ = _session()
+    with session:
+        repo = WarehouseRepository(session)
+        repo.bootstrap_registry(registry)
+        service = BackfillService(session, registry, FixtureFredClient(), market, validation_client=validation)
+        summary = service.validate_history(args.symbols, start, end, continue_on_error=args.continue_on_error)
+        rule_version = registry.validation["daily_bars"]["comparison_rule_version"]
+        print(json.dumps({"comparison_rule_version": rule_version, "from": start, "to": end, "summary": summary}, indent=2, sort_keys=True, default=str))
+    return 0
+
+
 def cmd_status(_args: argparse.Namespace) -> int:
     session, engine = _session()
     with session:
@@ -418,6 +447,14 @@ def build_parser() -> argparse.ArgumentParser:
     collect.add_argument("--resume", action="store_true")
     collect.add_argument("--fixture", action="store_true")
     collect.set_defaults(func=cmd_collect)
+
+    validate_history = sub.add_parser("validate-history")
+    validate_history.add_argument("--symbols", action="append", required=True)
+    validate_history.add_argument("--from", dest="date_from", required=True)
+    validate_history.add_argument("--to", dest="date_to", required=True)
+    validate_history.add_argument("--continue-on-error", action="store_true")
+    validate_history.add_argument("--fixture", action="store_true")
+    validate_history.set_defaults(func=cmd_validate_history)
 
     status = sub.add_parser("status")
     status.set_defaults(func=cmd_status)

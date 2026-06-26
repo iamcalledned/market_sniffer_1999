@@ -45,6 +45,7 @@ class MassiveClient:
                     vwap=Decimal(str(row["vw"])) if row.get("vw") is not None else None,
                     transaction_count=int(row["n"]) if row.get("n") is not None else None,
                     adjusted=True,
+                    price_basis="split_adjusted",
                 )
             )
         return payload, bars
@@ -69,6 +70,8 @@ class FixtureMassiveClient:
                     close=base + Decimal("0.25"),
                     adjusted_close=base + Decimal("0.25"),
                     volume=1000000 + idx,
+                    adjusted=True,
+                    price_basis="split_adjusted",
                 )
             )
         return {"symbol": symbol, "resultsCount": len(bars), "fixture": True}, bars

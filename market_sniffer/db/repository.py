@@ -397,7 +397,7 @@ class WarehouseRepository:
         trade_date = bar["trade_date"]
         if isinstance(trade_date, str):
             trade_date = date.fromisoformat(trade_date)
-        price_basis = bar.get("price_basis") or ("adjusted" if bar.get("adjusted", True) else "unadjusted")
+        price_basis = bar.get("price_basis") or ("split_adjusted" if bar.get("adjusted", True) else "raw")
         existing = self.session.scalar(
             select(m.MarketBarDaily).where(
                 m.MarketBarDaily.instrument_id == inst.id,
@@ -435,7 +435,7 @@ class WarehouseRepository:
         symbol: str,
         trade_date: date,
         source_precedence: list[str],
-        price_basis: str = "adjusted",
+        price_basis: str = "split_adjusted",
         rule_version: str = "daily_bar_v1",
         allow_yahoo_fallback: bool = False,
         primary_failure: str | None = None,
@@ -594,6 +594,7 @@ class WarehouseRepository:
         validation_value: Decimal | None = None,
         raw_payload_id: int | None = None,
         comparison_rule_version: str = "validation_v1",
+        details: dict[str, Any] | None = None,
     ) -> bool:
         inst = self.instrument(symbol)
         primary = self.source(primary_source_code)
@@ -605,18 +606,24 @@ class WarehouseRepository:
                 m.SourceDiscrepancy.primary_source_id == primary.id,
                 m.SourceDiscrepancy.validation_source_id == validation.id,
                 m.SourceDiscrepancy.field_name == field_name,
+                m.SourceDiscrepancy.comparison_rule_version == comparison_rule_version,
             )
         )
-        if existing:
-            existing.status = status
-            existing.comparison_rule_version = comparison_rule_version
-            existing.observed_at_utc = utc_now()
-            return False
         difference = None
         relative = None
         if primary_value is not None and validation_value is not None:
             difference = abs(primary_value - validation_value)
-            relative = difference / primary_value if primary_value != 0 else None
+            relative = difference / abs(primary_value) if primary_value != 0 else None
+        if existing:
+            existing.status = status
+            existing.primary_value = primary_value
+            existing.validation_value = validation_value
+            existing.absolute_difference = difference
+            existing.relative_difference = relative
+            existing.raw_payload_id = raw_payload_id
+            existing.details = cast(dict[str, Any], redact_secrets(details or {}))
+            existing.observed_at_utc = utc_now()
+            return False
         self.session.add(
             m.SourceDiscrepancy(
                 instrument_id=inst.id,
@@ -632,6 +639,7 @@ class WarehouseRepository:
                 comparison_rule_version=comparison_rule_version,
                 raw_payload_id=raw_payload_id,
                 observed_at_utc=utc_now(),
+                details=cast(dict[str, Any], redact_secrets(details or {})),
             )
         )
         self.session.flush()

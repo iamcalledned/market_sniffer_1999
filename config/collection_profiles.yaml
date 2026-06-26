@@ -7,7 +7,7 @@ profiles:
     description: "Daily OHLCV bars and available corporate actions for registered active instruments."
     source: massive
     canonical_source_precedence: ["massive", "yahoo"]
-    price_basis: adjusted
+    price_basis: split_adjusted
     yahoo_fallback_allowed: false
     frequency: daily
     retention: indefinite
@@ -44,3 +44,22 @@ profiles:
     retention_class: quote
     retention_days: 90
     enabled_by_default: false
+validation:
+  daily_bars:
+    historical_validation_enabled_env: YAHOO_HISTORICAL_VALIDATION_ENABLED
+    sample_symbols: ["SPY", "QQQ", "TLT", "NVDA"]
+    comparison_rule_version: "daily_bar_validation_v2"
+    source_price_basis:
+      massive: split_adjusted
+      yahoo: split_adjusted
+    allowed_price_basis_pairs:
+      - ["split_adjusted", "split_adjusted"]
+      - ["raw", "raw"]
+    close:
+      match_percent: 0.000001
+      minor_difference_percent: 0.002
+      material_difference_percent: 0.01
+    volume:
+      match_percent: 0.0
+      minor_difference_percent: 0.02
+      material_difference_percent: 0.10

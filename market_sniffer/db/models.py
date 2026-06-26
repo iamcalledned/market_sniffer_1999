@@ -161,7 +161,9 @@ class CanonicalObservation(Base):
 
 class MarketBarDaily(Base):
     __tablename__ = "market_bars_daily"
-    __table_args__ = (UniqueConstraint("instrument_id", "trade_date", "source_id", "adjusted", name="uq_market_bar_daily"),)
+    __table_args__ = (
+        UniqueConstraint("instrument_id", "trade_date", "source_id", "price_basis", name="uq_market_bar_daily_basis"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
@@ -177,7 +179,7 @@ class MarketBarDaily(Base):
     source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id"), index=True)
     raw_payload_id: Mapped[int] = mapped_column(ForeignKey("raw_payloads.id"), index=True)
     adjusted: Mapped[bool] = mapped_column(Boolean, default=True)
-    price_basis: Mapped[str] = mapped_column(String(40), default="adjusted", index=True)
+    price_basis: Mapped[str] = mapped_column(String(40), default="split_adjusted", index=True)
     is_final: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     quality_status: Mapped[str] = mapped_column(String(40), default="ok", index=True)
 
@@ -191,7 +193,7 @@ class CanonicalMarketBarDaily(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
     trade_date: Mapped[date] = mapped_column(Date, index=True)
-    price_basis: Mapped[str] = mapped_column(String(40), default="adjusted", index=True)
+    price_basis: Mapped[str] = mapped_column(String(40), default="split_adjusted", index=True)
     open: Mapped[Decimal] = mapped_column(Numeric(28, 10))
     high: Mapped[Decimal] = mapped_column(Numeric(28, 10))
     low: Mapped[Decimal] = mapped_column(Numeric(28, 10))
@@ -358,7 +360,17 @@ class DataQualityEvent(Base):
 
 class SourceDiscrepancy(Base):
     __tablename__ = "source_discrepancies"
-    __table_args__ = (UniqueConstraint("instrument_id", "trade_date", "primary_source_id", "validation_source_id", "field_name", name="uq_source_discrepancy"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_id",
+            "trade_date",
+            "primary_source_id",
+            "validation_source_id",
+            "field_name",
+            "comparison_rule_version",
+            name="uq_source_discrepancy_rule",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), index=True)
@@ -374,6 +386,8 @@ class SourceDiscrepancy(Base):
     comparison_rule_version: Mapped[str] = mapped_column(String(40), default="validation_v1", index=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payloads.id"))
     observed_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    superseded_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class SystemSetting(Base):

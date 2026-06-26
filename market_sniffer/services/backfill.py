@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from datetime import date
 from decimal import Decimal
-from typing import Iterable
+from typing import Any, Iterable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,15 @@ from market_sniffer.collectors.base import FredClient, MarketDataClient, Provide
 from market_sniffer.db import models as m
 from market_sniffer.db.repository import WarehouseRepository
 from market_sniffer.services.registry_service import Registry
+
+
+DISCREPANCY_STATUSES = {
+    "match",
+    "minor_difference",
+    "material_difference",
+    "not_comparable",
+    "validation_unavailable",
+}
 
 
 class BackfillService:
@@ -60,6 +69,104 @@ class BackfillService:
         except Exception as exc:
             self.repo.finish_run(parent, "failed", {"error": str(exc)})
             raise
+
+    def validate_history(
+        self,
+        symbols: Iterable[str],
+        start: date,
+        end: date,
+        continue_on_error: bool = False,
+    ) -> dict[str, dict[str, int]]:
+        profile_cfg = self.registry.profiles.get("daily_market", {})
+        precedence = profile_cfg.get("canonical_source_precedence", ["massive", "yahoo"])
+        price_basis = profile_cfg.get("price_basis", "split_adjusted")
+        fallback_allowed = bool(profile_cfg.get("yahoo_fallback_allowed", False))
+        summary = {
+            symbol: {status: 0 for status in DISCREPANCY_STATUSES}
+            for symbol in symbols
+        }
+        for symbol in symbols:
+            run = self.repo.start_run(
+                "validate_history",
+                "validation",
+                "yahoo",
+                target_type="instrument",
+                target_key=symbol,
+                date_from=start,
+                date_to=end,
+            )
+            try:
+                massive_payload, massive_bars = self._with_retries(lambda: self.market_client.daily_bars(symbol, start, end))
+                massive_raw = self.repo.raw_payload(
+                    "massive",
+                    "aggs/ticker/range/1/day",
+                    {"symbol": symbol, "from": start.isoformat(), "to": end.isoformat(), "apiKey": "***REDACTED***"},
+                    massive_payload,
+                )
+                for bar in massive_bars:
+                    _, source_bar = self.repo.insert_daily_bar(symbol, "massive", massive_raw, bar.asdict())
+                    self.repo.canonicalize_daily_bar(
+                        symbol,
+                        source_bar.trade_date,
+                        precedence,
+                        price_basis=price_basis,
+                        allow_yahoo_fallback=fallback_allowed,
+                    )
+
+                if self.validation_client is None:
+                    raise ProviderError("Yahoo historical validation client is not configured")
+                yahoo_payload, yahoo_bars = self._with_retries(lambda: self.validation_client.daily_bars(symbol, start, end))
+                yahoo_raw = self.repo.raw_payload(
+                    "yahoo",
+                    "historical_daily_bars",
+                    {"symbol": symbol, "from": start.isoformat(), "to": end.isoformat()},
+                    yahoo_payload,
+                    retention_class="validation",
+                )
+                run.fetched_count = len(yahoo_bars)
+                for bar in yahoo_bars:
+                    inserted, _ = self.repo.insert_daily_bar(symbol, "yahoo", yahoo_raw, bar.asdict())
+                    if inserted:
+                        run.inserted_count += 1
+                    else:
+                        run.skipped_count += 1
+                    self._compare_yahoo_bar(symbol, bar.trade_date, bar, yahoo_raw.id, run.id)
+                    for status, count in self._current_discrepancy_counts(symbol, bar.trade_date).items():
+                        summary[symbol][status] += count
+                self.repo.finish_run(run, "succeeded")
+            except ProviderError as exc:
+                run.failed_count = 1
+                self.repo.record_event(
+                    exc.event_type,
+                    str(exc),
+                    "error",
+                    "yahoo",
+                    symbol=symbol,
+                    collector_run_id=run.id,
+                    observation_date=end,
+                    details={"status": "validation_unavailable"},
+                )
+                self.repo.finish_run(run, "failed", {"error": str(exc)})
+                summary[symbol]["validation_unavailable"] += 1
+                if not continue_on_error:
+                    raise
+        self.session.commit()
+        return summary
+
+    def _current_discrepancy_counts(self, symbol: str, trade_date: date) -> dict[str, int]:
+        inst = self.repo.instrument(symbol)
+        rule_version = str(self._daily_validation_policy()["comparison_rule_version"])
+        rows = self.session.scalars(
+            select(m.SourceDiscrepancy).where(
+                m.SourceDiscrepancy.instrument_id == inst.id,
+                m.SourceDiscrepancy.trade_date == trade_date,
+                m.SourceDiscrepancy.comparison_rule_version == rule_version,
+            )
+        ).all()
+        counts = {status: 0 for status in DISCREPANCY_STATUSES}
+        for row in rows:
+            counts[row.status] += 1
+        return counts
 
     def _fred(
         self,
@@ -274,7 +381,7 @@ class BackfillService:
         failures = 0
         profile_cfg = self.registry.profiles.get("daily_market", {})
         precedence = profile_cfg.get("canonical_source_precedence", ["massive", "yahoo"])
-        price_basis = profile_cfg.get("price_basis", "adjusted")
+        price_basis = profile_cfg.get("price_basis", "split_adjusted")
         fallback_allowed = bool(profile_cfg.get("yahoo_fallback_allowed", False))
         for symbol, meta in self.registry.instruments.items():
             if only and symbol not in only and f"MASSIVE:{symbol}" not in only and f"POLYGON:{symbol}" not in only:
@@ -365,6 +472,13 @@ class BackfillService:
     def _compare_yahoo_bar(
         self, symbol: str, trade_date: date, yahoo_bar, yahoo_raw_payload_id: int, collector_run_id: int | None
     ) -> None:
+        policy = self._daily_validation_policy()
+        rule_version = str(policy["comparison_rule_version"])
+        allowed_pairs = {tuple(pair) for pair in policy["allowed_price_basis_pairs"]}
+        yahoo_basis = getattr(yahoo_bar, "price_basis", None) or (
+            yahoo_bar.get("price_basis") if isinstance(yahoo_bar, dict) else None
+        )
+        yahoo_basis = yahoo_basis or policy.get("source_price_basis", {}).get("yahoo", "unknown")
         inst = self.repo.instrument(symbol)
         massive = self.repo.source("massive")
         primary = self.session.scalar(
@@ -372,11 +486,32 @@ class BackfillService:
                 m.MarketBarDaily.instrument_id == inst.id,
                 m.MarketBarDaily.trade_date == trade_date,
                 m.MarketBarDaily.source_id == massive.id,
+                m.MarketBarDaily.price_basis == policy.get("source_price_basis", {}).get("massive", "split_adjusted"),
             )
         )
         if primary is None:
+            details = self._comparison_details(
+                "validation source bar missing",
+                "close",
+                trade_date,
+                None,
+                self._bar_value(yahoo_bar, "close"),
+                None,
+                yahoo_basis,
+                rule_version,
+                "validation_unavailable",
+            )
             self.repo.record_discrepancy(
-                symbol, trade_date, "massive", "yahoo", "close", "validation_unavailable", raw_payload_id=yahoo_raw_payload_id
+                symbol,
+                trade_date,
+                "massive",
+                "yahoo",
+                "close",
+                "validation_unavailable",
+                validation_value=self._bar_value(yahoo_bar, "close"),
+                raw_payload_id=yahoo_raw_payload_id,
+                comparison_rule_version=rule_version,
+                details=details,
             )
             self.repo.record_event(
                 "source_discrepancy",
@@ -388,18 +523,52 @@ class BackfillService:
                 observation_date=trade_date,
             )
             return
-        if primary.price_basis != ("adjusted" if yahoo_bar.adjusted else "unadjusted"):
-            self.repo.record_discrepancy(
-                symbol, trade_date, "massive", "yahoo", "close", "not_comparable", raw_payload_id=yahoo_raw_payload_id
-            )
+        primary_basis = primary.price_basis
+        if (primary_basis, yahoo_basis) not in allowed_pairs:
+            reason = f"incompatible price basis pair {primary_basis}/{yahoo_basis}"
+            for field in ["close", "volume"]:
+                self.repo.record_discrepancy(
+                    symbol,
+                    trade_date,
+                    "massive",
+                    "yahoo",
+                    field,
+                    "not_comparable",
+                    self._model_value(primary, field),
+                    self._bar_value(yahoo_bar, field),
+                    yahoo_raw_payload_id,
+                    comparison_rule_version=rule_version,
+                    details=self._comparison_details(
+                        reason,
+                        field,
+                        trade_date,
+                        self._model_value(primary, field),
+                        self._bar_value(yahoo_bar, field),
+                        primary_basis,
+                        yahoo_basis,
+                        rule_version,
+                        "not_comparable",
+                    ),
+                )
             return
-        close_status = self._classify_difference(primary.close, yahoo_bar.close, Decimal("0.002"), Decimal("0.01"))
+        close_policy = policy["close"]
+        volume_policy = policy["volume"]
+        close_status = self._classify_difference(
+            primary.close,
+            self._bar_value(yahoo_bar, "close") or Decimal("0"),
+            Decimal(str(close_policy["match_percent"])),
+            Decimal(str(close_policy["minor_difference_percent"])),
+            Decimal(str(close_policy["material_difference_percent"])),
+        )
         volume_status = self._classify_difference(
             Decimal(primary.volume or 0),
-            Decimal(yahoo_bar.volume or 0),
-            Decimal("0.02"),
-            Decimal("0.10"),
+            Decimal(self._bar_value(yahoo_bar, "volume") or 0),
+            Decimal(str(volume_policy["match_percent"])),
+            Decimal(str(volume_policy["minor_difference_percent"])),
+            Decimal(str(volume_policy["material_difference_percent"])),
         )
+        yahoo_close = self._bar_value(yahoo_bar, "close")
+        yahoo_volume = self._bar_value(yahoo_bar, "volume")
         self.repo.record_discrepancy(
             symbol,
             trade_date,
@@ -408,8 +577,20 @@ class BackfillService:
             "close",
             close_status,
             primary.close,
-            yahoo_bar.close,
+            yahoo_close,
             yahoo_raw_payload_id,
+            comparison_rule_version=rule_version,
+            details=self._comparison_details(
+                "allowed basis pair",
+                "close",
+                trade_date,
+                primary.close,
+                yahoo_close,
+                primary_basis,
+                yahoo_basis,
+                rule_version,
+                close_status,
+            ),
         )
         self.repo.record_discrepancy(
             symbol,
@@ -419,8 +600,20 @@ class BackfillService:
             "volume",
             volume_status,
             Decimal(primary.volume or 0),
-            Decimal(yahoo_bar.volume or 0),
+            Decimal(yahoo_volume or 0),
             yahoo_raw_payload_id,
+            comparison_rule_version=rule_version,
+            details=self._comparison_details(
+                "allowed basis pair",
+                "volume",
+                trade_date,
+                Decimal(primary.volume or 0),
+                Decimal(yahoo_volume or 0),
+                primary_basis,
+                yahoo_basis,
+                rule_version,
+                volume_status,
+            ),
         )
         if "material_difference" in {close_status, volume_status}:
             self.repo.record_event(
@@ -431,18 +624,75 @@ class BackfillService:
                 symbol=symbol,
                 collector_run_id=collector_run_id,
                 observation_date=trade_date,
-                details={"close_status": close_status, "volume_status": volume_status},
+                details={"close_status": close_status, "volume_status": volume_status, "rule_version": rule_version},
             )
+
+    def _daily_validation_policy(self) -> dict[str, Any]:
+        return self.registry.validation["daily_bars"]
+
+    @staticmethod
+    def _model_value(row: m.MarketBarDaily, field: str) -> Decimal | None:
+        value = getattr(row, field)
+        if value is None:
+            return None
+        return Decimal(str(value))
+
+    @staticmethod
+    def _bar_value(bar, field: str) -> Decimal | None:
+        value = bar.get(field) if isinstance(bar, dict) else getattr(bar, field, None)
+        if value is None:
+            return None
+        return Decimal(str(value))
+
+    @staticmethod
+    def _comparison_details(
+        reason: str,
+        field: str,
+        trade_date: date,
+        primary_value: Decimal | None,
+        validation_value: Decimal | None,
+        primary_price_basis: str | None,
+        validation_price_basis: str | None,
+        rule_version: str,
+        status: str,
+    ) -> dict[str, Any]:
+        difference = None
+        percentage = None
+        if primary_value is not None and validation_value is not None:
+            difference = abs(primary_value - validation_value)
+            if primary_value != 0:
+                percentage = difference / abs(primary_value)
+        return {
+            "primary_source": "massive",
+            "validation_source": "yahoo",
+            "field": field,
+            "trade_date": trade_date.isoformat(),
+            "primary_value": None if primary_value is None else str(primary_value),
+            "validation_value": None if validation_value is None else str(validation_value),
+            "absolute_difference": None if difference is None else str(difference),
+            "percentage_difference": None if percentage is None else str(percentage),
+            "primary_price_basis": primary_price_basis,
+            "validation_price_basis": validation_price_basis,
+            "comparison_rule_version": rule_version,
+            "comparison_status": status,
+            "reason": reason,
+        }
 
     @staticmethod
     def _classify_difference(
-        primary: Decimal, validation: Decimal, minor_relative: Decimal, material_relative: Decimal
+        primary: Decimal,
+        validation: Decimal,
+        match_relative: Decimal,
+        minor_relative: Decimal,
+        material_relative: Decimal,
     ) -> str:
         if primary == validation:
             return "match"
         if primary == 0:
-            return "not_comparable"
+            return "material_difference"
         relative = abs(primary - validation) / abs(primary)
+        if relative <= match_relative:
+            return "match"
         if relative <= minor_relative:
             return "minor_difference"
         if relative >= material_relative:
