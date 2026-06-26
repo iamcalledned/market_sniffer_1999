@@ -110,7 +110,10 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     fred = FixtureFredClient() if fixture else FredApiClient(settings.fred_api_key)
     market = FixtureMassiveClient() if fixture else MassiveClient(settings.massive_api_key)
     quote = FixtureYahooQuoteClient() if fixture else YahooQuoteClient(settings.yahoo_enabled, settings.yahoo_quotes_enabled)
-    yahoo_validation_enabled = bool(registry.sources.get("yahoo", {}).get("enabled", settings.yahoo_enabled))
+    yahoo_validation_enabled = bool(
+        registry.sources.get("yahoo", {}).get("enabled", settings.yahoo_enabled)
+        and settings.yahoo_historical_validation_enabled
+    )
     validation = FixtureYahooHistoricalClient() if fixture else YahooHistoricalClient(yahoo_validation_enabled)
     if args.force and (not args.date_from or not args.date_to or not args.only):
         print("--force requires explicit --from, --to, and at least one --only target", file=sys.stderr)
@@ -191,7 +194,11 @@ def cmd_verify_foundation(args: argparse.Namespace) -> int:
     fred = FixtureFredClient() if args.fixture else FredApiClient(settings.fred_api_key)
     market = FixtureMassiveClient() if args.fixture else MassiveClient(settings.massive_api_key)
     quote = FixtureYahooQuoteClient() if args.fixture else YahooQuoteClient(settings.yahoo_enabled, settings.yahoo_quotes_enabled)
-    validation = FixtureYahooHistoricalClient() if args.fixture else YahooHistoricalClient(enabled=True)
+    validation = (
+        FixtureYahooHistoricalClient()
+        if args.fixture
+        else YahooHistoricalClient(enabled=settings.yahoo_historical_validation_enabled)
+    )
     targets = ["DGS10", "BAMLH0A0HYM2", "SPY", "QQQ"]
     session, _ = _session()
     with session:
@@ -280,6 +287,8 @@ def cmd_validate_sources(args: argparse.Namespace) -> int:
         missing.append("FRED_API_KEY")
     if registry.sources["massive"].get("enabled") and not settings.massive_api_key:
         missing.append("MASSIVE_API_KEY or POLYGON_API_KEY")
+    if settings.yahoo_historical_validation_enabled and not settings.yahoo_enabled:
+        missing.append("YAHOO_ENABLED must be true before YAHOO_HISTORICAL_VALIDATION_ENABLED")
     if settings.yahoo_quotes_enabled and not settings.yahoo_enabled:
         missing.append("YAHOO_ENABLED must be true before YAHOO_QUOTES_ENABLED")
     if missing and not args.live:
@@ -293,7 +302,13 @@ def cmd_validate_sources(args: argparse.Namespace) -> int:
             for item in missing:
                 print(f"- {item}")
             return 1
-        results = _live_source_checks(settings, require_yahoo=bool(registry.sources.get("yahoo", {}).get("enabled", False)))
+        results = _live_source_checks(
+            settings,
+            require_yahoo=bool(
+                registry.sources.get("yahoo", {}).get("enabled", False)
+                and settings.yahoo_historical_validation_enabled
+            ),
+        )
         print(json.dumps(results, indent=2, sort_keys=True, default=str))
         return 1 if any(not item["success"] for item in results) else 0
     print("source capability configuration ok")

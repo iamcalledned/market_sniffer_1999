@@ -14,7 +14,10 @@ class YahooHistoricalClient:
 
     def daily_bars(self, symbol: str, start: date, end: date) -> tuple[dict[str, Any], list[DailyBar]]:
         if not self.enabled:
-            raise MissingCredentialError("Yahoo historical validation is disabled; set YAHOO_ENABLED=true")
+            raise MissingCredentialError(
+                "Yahoo historical validation is disabled; set YAHOO_ENABLED=true and "
+                "YAHOO_HISTORICAL_VALIDATION_ENABLED=true"
+            )
         try:
             import yfinance as yf  # type: ignore
         except ImportError as exc:

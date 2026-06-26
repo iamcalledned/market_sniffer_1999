@@ -20,6 +20,7 @@ from market_sniffer.services.dates import MarketCalendar, default_backfill_windo
 from market_sniffer.services.quality import DataQualityService
 from market_sniffer.services.registry_service import Registry, RegistryError, load_registry, validate_registry
 from market_sniffer.services.retention import RetentionService
+from market_sniffer.settings import get_settings
 
 
 def test_database_pragmas_and_tables(tmp_path):
@@ -307,6 +308,25 @@ def test_future_quote_polling_disabled_by_default():
     assert registry.profiles["future_realtime_quote_watchlist"]["enabled_by_default"] is False
     assert registry.sources["yahoo"]["enabled"] is True
     assert registry.sources["yahoo"]["future_quote_capability"] is True
+
+
+def test_yahoo_historical_validation_flag_is_separate_from_quotes(monkeypatch):
+    monkeypatch.setenv("YAHOO_ENABLED", "true")
+    monkeypatch.setenv("YAHOO_HISTORICAL_VALIDATION_ENABLED", "true")
+    monkeypatch.setenv("YAHOO_QUOTES_ENABLED", "false")
+    settings = get_settings()
+    assert settings.yahoo_enabled is True
+    assert settings.yahoo_historical_validation_enabled is True
+    assert settings.yahoo_quotes_enabled is False
+
+
+def test_yahoo_historical_validation_defaults_to_yahoo_enabled(monkeypatch):
+    monkeypatch.setenv("YAHOO_ENABLED", "true")
+    monkeypatch.delenv("YAHOO_HISTORICAL_VALIDATION_ENABLED", raising=False)
+    monkeypatch.setenv("YAHOO_QUOTES_ENABLED", "false")
+    settings = get_settings()
+    assert settings.yahoo_historical_validation_enabled is True
+    assert settings.yahoo_quotes_enabled is False
 
 
 def test_market_calendar_completed_session_rules():

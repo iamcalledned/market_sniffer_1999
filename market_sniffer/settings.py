@@ -16,6 +16,7 @@ class Settings:
     massive_api_key: str | None
     fred_api_key: str | None
     yahoo_enabled: bool
+    yahoo_historical_validation_enabled: bool
     yahoo_quotes_enabled: bool
 
 
@@ -54,6 +55,10 @@ def get_settings() -> Settings:
         massive_api_key=os.getenv("MASSIVE_API_KEY") or os.getenv("POLYGON_API_KEY"),
         fred_api_key=os.getenv("FRED_API_KEY"),
         yahoo_enabled=_bool_env("YAHOO_ENABLED", False),
+        yahoo_historical_validation_enabled=_bool_env(
+            "YAHOO_HISTORICAL_VALIDATION_ENABLED",
+            _bool_env("YAHOO_ENABLED", False),
+        ),
         yahoo_quotes_enabled=_bool_env("YAHOO_QUOTES_ENABLED", False),
     )
 
