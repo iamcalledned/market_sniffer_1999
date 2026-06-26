@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
-from datetime import date
+from datetime import date, timedelta
+from typing import Any, Callable, Sequence
 
 from alembic import command
 from alembic.config import Config
@@ -11,7 +13,12 @@ from sqlalchemy import select
 
 from market_sniffer.collectors.fred import FixtureFredClient, FredApiClient
 from market_sniffer.collectors.massive import FixtureMassiveClient, MassiveClient
-from market_sniffer.collectors.yahoo import FixtureYahooQuoteClient, YahooQuoteClient
+from market_sniffer.collectors.yahoo import (
+    FixtureYahooHistoricalClient,
+    FixtureYahooQuoteClient,
+    YahooHistoricalClient,
+    YahooQuoteClient,
+)
 from market_sniffer.db import models as m
 from market_sniffer.db.engine import assert_sqlite_pragmas, create_db_engine, session_factory
 from market_sniffer.db.repository import WarehouseRepository
@@ -103,11 +110,16 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     fred = FixtureFredClient() if fixture else FredApiClient(settings.fred_api_key)
     market = FixtureMassiveClient() if fixture else MassiveClient(settings.massive_api_key)
     quote = FixtureYahooQuoteClient() if fixture else YahooQuoteClient(settings.yahoo_enabled, settings.yahoo_quotes_enabled)
+    yahoo_validation_enabled = bool(registry.sources.get("yahoo", {}).get("enabled", settings.yahoo_enabled))
+    validation = FixtureYahooHistoricalClient() if fixture else YahooHistoricalClient(yahoo_validation_enabled)
+    if args.force and (not args.date_from or not args.date_to or not args.only):
+        print("--force requires explicit --from, --to, and at least one --only target", file=sys.stderr)
+        return 2
     session, _ = _session()
     with session:
         repo = WarehouseRepository(session)
         repo.bootstrap_registry(registry)
-        service = BackfillService(session, registry, fred, market, quote)
+        service = BackfillService(session, registry, fred, market, quote, validation)
         failures = service.backfill(
             args.profile,
             start,
@@ -116,15 +128,14 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             continue_on_error=args.continue_on_error,
             fred_end=explicit_end or fred_end,
+            resume=args.resume,
+            force=args.force,
         )
     return 1 if failures and not args.continue_on_error else 0
 
 
 def cmd_collect(args: argparse.Namespace) -> int:
     args.months = 0
-    today = date.today().isoformat()
-    args.date_from = args.date_from or today
-    args.date_to = args.date_to or today
     return cmd_backfill(args)
 
 
@@ -155,7 +166,7 @@ def cmd_retention(args: argparse.Namespace) -> int:
     with session:
         result = RetentionService(session).prune_raw_payloads(
             args.scope,
-            dry_run=args.dry_run,
+            dry_run=args.dry_run or not args.confirm,
             retention_days=args.retention_days,
         )
         print(json.dumps(result.__dict__, indent=2, sort_keys=True))
@@ -163,31 +174,40 @@ def cmd_retention(args: argparse.Namespace) -> int:
 
 
 def cmd_verify_foundation(args: argparse.Namespace) -> int:
+    verify_db_path = args.db_path or f"/tmp/market_sniffer_verify_{os.getpid()}.sqlite3"
+    os.environ["MARKET_SNIFFER_DB_PATH"] = verify_db_path
     settings = get_settings()
     if not args.fixture and (not settings.fred_api_key or not settings.massive_api_key):
         print("verify-foundation requires FRED_API_KEY and MASSIVE_API_KEY/POLYGON_API_KEY unless --fixture is used")
         return 1
+    if not args.fixture:
+        live_status = _live_source_checks(settings, require_yahoo=True)
+        print(json.dumps({"live_capability": live_status}, indent=2, sort_keys=True, default=str))
+        if any(not item["success"] for item in live_status):
+            return 1
     command.upgrade(_alembic_config(), "head")
     registry = load_registry()
     start, end = MarketCalendar().recent_completed_range(args.days)
     fred = FixtureFredClient() if args.fixture else FredApiClient(settings.fred_api_key)
     market = FixtureMassiveClient() if args.fixture else MassiveClient(settings.massive_api_key)
     quote = FixtureYahooQuoteClient() if args.fixture else YahooQuoteClient(settings.yahoo_enabled, settings.yahoo_quotes_enabled)
+    validation = FixtureYahooHistoricalClient() if args.fixture else YahooHistoricalClient(enabled=True)
     targets = ["DGS10", "BAMLH0A0HYM2", "SPY", "QQQ"]
     session, _ = _session()
     with session:
         repo = WarehouseRepository(session)
         repo.bootstrap_registry(registry)
-        service = BackfillService(session, registry, fred, market, quote)
-        failures = service.backfill("core", start, end, only=targets, continue_on_error=args.continue_on_error)
+        service = BackfillService(session, registry, fred, market, quote, validation)
+        failures = service.backfill("core", start, end, only=targets, continue_on_error=True)
         first_counts = repo.counts()
-        rerun_failures = service.backfill("core", start, end, only=targets, continue_on_error=args.continue_on_error)
+        rerun_failures = service.backfill("core", start, end, only=targets, continue_on_error=True, resume=True)
         second_counts = repo.counts()
         DataQualityService(session).check_quote_freshness()
         sample_bar = session.scalar(select(m.CanonicalMarketBarDaily).limit(1))
         sample_obs = session.scalar(select(m.CanonicalObservation).limit(1))
         report = {
             "range": {"from": start.isoformat(), "to": end.isoformat()},
+            "database": verify_db_path,
             "failures": failures,
             "rerun_failures": rerun_failures,
             "first_counts": first_counts,
@@ -262,13 +282,84 @@ def cmd_validate_sources(args: argparse.Namespace) -> int:
         missing.append("MASSIVE_API_KEY or POLYGON_API_KEY")
     if settings.yahoo_quotes_enabled and not settings.yahoo_enabled:
         missing.append("YAHOO_ENABLED must be true before YAHOO_QUOTES_ENABLED")
-    if missing:
+    if missing and not args.live:
         print("missing or invalid capability configuration:")
         for item in missing:
             print(f"- {item}")
         return 1 if not args.allow_missing else 0
+    if args.live:
+        if missing:
+            print("missing required live capability configuration:")
+            for item in missing:
+                print(f"- {item}")
+            return 1
+        results = _live_source_checks(settings, require_yahoo=bool(registry.sources.get("yahoo", {}).get("enabled", False)))
+        print(json.dumps(results, indent=2, sort_keys=True, default=str))
+        return 1 if any(not item["success"] for item in results) else 0
     print("source capability configuration ok")
     return 0
+
+
+def _live_source_checks(settings, require_yahoo: bool) -> list[dict[str, object]]:
+    _latest_start, end = MarketCalendar().recent_completed_range(1)
+    start = end - timedelta(days=30)
+    checks: list[dict[str, object]] = []
+    operations: list[tuple[str, str, Callable[[], tuple[dict[str, Any], Sequence[Any]]]]] = [
+        ("fred", "series/observations DGS10", lambda: FredApiClient(settings.fred_api_key).observations("DGS10", start, end)),
+        ("massive", "daily_bars SPY", lambda: MassiveClient(settings.massive_api_key).daily_bars("SPY", start, end)),
+    ]
+    for source, operation, func in operations:
+        try:
+            payload, rows = func()
+            row_count = len(rows)
+            checks.append(
+                {
+                    "source": source,
+                    "operation": operation,
+                    "success": row_count > 0,
+                    "row_count": row_count,
+                    "status": payload.get("status") if isinstance(payload, dict) else None,
+                    "failure_class": None if row_count > 0 else "empty_response",
+                    "required_action": None if row_count > 0 else "check provider entitlement/date availability",
+                }
+            )
+        except Exception as exc:
+            checks.append(
+                {
+                    "source": source,
+                    "operation": operation,
+                    "success": False,
+                    "failure_class": exc.__class__.__name__,
+                    "status": None,
+                    "required_action": "verify credentials, entitlement, rate limits, and provider availability",
+                }
+            )
+    if require_yahoo:
+        try:
+            payload, rows = YahooHistoricalClient(enabled=True).daily_bars("SPY", start, end)
+            checks.append(
+                {
+                    "source": "yahoo",
+                    "operation": "historical_daily_bars SPY",
+                    "success": bool(rows),
+                    "row_count": len(rows),
+                    "status": "ok" if rows else "empty",
+                    "failure_class": None if rows else "empty_response",
+                    "required_action": None if rows else "check Yahoo availability",
+                }
+            )
+        except Exception as exc:
+            checks.append(
+                {
+                    "source": "yahoo",
+                    "operation": "historical_daily_bars SPY",
+                    "success": False,
+                    "failure_class": exc.__class__.__name__,
+                    "status": None,
+                    "required_action": "check yfinance dependency/network/provider availability",
+                }
+            )
+    return checks
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -327,6 +418,12 @@ def build_parser() -> argparse.ArgumentParser:
     prune.add_argument("--scope", choices=["quote", "intraday", "validation"], required=True)
     prune.add_argument("--retention-days", type=int)
     prune.add_argument("--dry-run", action="store_true")
+    prune.add_argument("--confirm", action="store_true", help="Actually prune eligible payload bodies.")
+    prune_alias = retention_sub.add_parser("prune")
+    prune_alias.add_argument("--scope", choices=["quote", "intraday", "validation"], required=True)
+    prune_alias.add_argument("--retention-days", type=int)
+    prune_alias.add_argument("--dry-run", action="store_true")
+    prune_alias.add_argument("--confirm", action="store_true", help="Actually prune eligible payload bodies.")
     retention.set_defaults(func=cmd_retention)
 
     inspect = sub.add_parser("inspect")
@@ -339,10 +436,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     validate = sub.add_parser("validate-sources")
     validate.add_argument("--allow-missing", action="store_true")
+    validate.add_argument("--live", action="store_true")
     validate.set_defaults(func=cmd_validate_sources)
 
     verify = sub.add_parser("verify-foundation")
     verify.add_argument("--days", type=int, default=5)
+    verify.add_argument("--db-path")
     verify.add_argument("--fixture", action="store_true")
     verify.add_argument("--continue-on-error", action="store_true")
     verify.set_defaults(func=cmd_verify_foundation)

@@ -371,6 +371,7 @@ class SourceDiscrepancy(Base):
     absolute_difference: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
     relative_difference: Mapped[Decimal | None] = mapped_column(Numeric(28, 10))
     status: Mapped[str] = mapped_column(String(40), index=True)
+    comparison_rule_version: Mapped[str] = mapped_column(String(40), default="validation_v1", index=True)
     raw_payload_id: Mapped[int | None] = mapped_column(ForeignKey("raw_payloads.id"))
     observed_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 

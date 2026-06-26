@@ -240,6 +240,32 @@ class WarehouseRepository:
         )
         self.session.flush()
 
+    def resolve_events(
+        self,
+        event_types: set[str],
+        source_code: str | None = None,
+        series_code: str | None = None,
+        symbol: str | None = None,
+    ) -> int:
+        source_id = self.source(source_code).id if source_code else None
+        series_id = self.series(series_code).id if series_code else None
+        instrument_id = self.instrument(symbol).id if symbol else None
+        stmt = select(m.DataQualityEvent).where(
+            m.DataQualityEvent.event_type.in_(event_types),
+            m.DataQualityEvent.resolved.is_(False),
+        )
+        if source_id is not None:
+            stmt = stmt.where(m.DataQualityEvent.source_id == source_id)
+        if series_id is not None:
+            stmt = stmt.where(m.DataQualityEvent.series_id == series_id)
+        if instrument_id is not None:
+            stmt = stmt.where(m.DataQualityEvent.instrument_id == instrument_id)
+        events = self.session.scalars(stmt).all()
+        for event in events:
+            event.resolved = True
+        self.session.flush()
+        return len(events)
+
     def insert_fred_observation(
         self,
         series_code: str,
@@ -567,6 +593,7 @@ class WarehouseRepository:
         primary_value: Decimal | None = None,
         validation_value: Decimal | None = None,
         raw_payload_id: int | None = None,
+        comparison_rule_version: str = "validation_v1",
     ) -> bool:
         inst = self.instrument(symbol)
         primary = self.source(primary_source_code)
@@ -582,6 +609,7 @@ class WarehouseRepository:
         )
         if existing:
             existing.status = status
+            existing.comparison_rule_version = comparison_rule_version
             existing.observed_at_utc = utc_now()
             return False
         difference = None
@@ -601,6 +629,7 @@ class WarehouseRepository:
                 absolute_difference=difference,
                 relative_difference=relative,
                 status=status,
+                comparison_rule_version=comparison_rule_version,
                 raw_payload_id=raw_payload_id,
                 observed_at_utc=utc_now(),
             )

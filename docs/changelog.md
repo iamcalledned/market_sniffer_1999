@@ -8,3 +8,4 @@
 - Documented raw-payload retention classes and manual pruning.
 - Documented quote quality labels and disabled-by-default quote polling.
 - Documented registry validation and constrained live verification workflow.
+- Documented Yahoo historical validation, live source capability checks, and resume/force semantics.

@@ -30,3 +30,5 @@ Missing data is never stored as zero. Canonical records retain source, raw obser
 FRED vintages use `series_id`, `observation_date`, `realtime_start`, and `source_id` as the revision identity. `is_latest_vintage` marks the latest known vintage for current reports. Point-in-time reads select the newest `realtime_start` not after the requested historical date.
 
 Raw payload retention classes are `indefinite`, `quote`, `intraday`, and `validation`. Pruning clears eligible payload bodies only; redacted request metadata, payload hash, retrieval timestamp, status, source record identifier, and downstream lineage remain.
+
+Yahoo validation bars remain source-specific in `market_bars_daily`. They do not update `canonical_market_bars_daily`; comparisons are stored in `source_discrepancies`.

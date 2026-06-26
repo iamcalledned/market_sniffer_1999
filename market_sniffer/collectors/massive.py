@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from market_sniffer.collectors.base import DailyBar, EntitlementError, MissingCredentialError, ProviderError
+from market_sniffer.collectors.base import DailyBar, EntitlementError, MissingCredentialError, ProviderError, RateLimitError
 from market_sniffer.services.dates import business_days
 
 
@@ -19,8 +19,13 @@ class MassiveClient:
             raise MissingCredentialError("MASSIVE_API_KEY or POLYGON_API_KEY is required for real market collection")
         url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{start}/{end}"
         params = {"adjusted": "true", "sort": "asc", "limit": "50000", "apiKey": self.api_key}
-        response = httpx.get(url, params=params, timeout=30)
+        try:
+            response = httpx.get(url, params=params, timeout=30)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"Massive/Polygon connection error for {symbol}: {exc.__class__.__name__}") from exc
         payload = response.json()
+        if response.status_code == 429:
+            raise RateLimitError(f"Massive/Polygon rate limit hit for {symbol}")
         if response.status_code in {401, 403}:
             raise EntitlementError(f"Massive/Polygon entitlement unavailable for {symbol}")
         if response.status_code >= 400 or payload.get("status") == "ERROR":

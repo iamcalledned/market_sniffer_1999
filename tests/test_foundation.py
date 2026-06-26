@@ -10,6 +10,7 @@ from market_sniffer.collectors.base import DailyBar, MissingCredentialError
 from market_sniffer.collectors.fred import FixtureFredClient, FredApiClient
 from market_sniffer.collectors.massive import FixtureMassiveClient
 from market_sniffer.collectors.yahoo import FixtureYahooQuoteClient, YahooQuoteClient
+from market_sniffer.collectors.yahoo import FixtureYahooHistoricalClient
 from market_sniffer.db import models as m
 from market_sniffer.db.engine import assert_sqlite_pragmas, create_db_engine
 from market_sniffer.db.models import Base
@@ -181,7 +182,9 @@ def test_quality_event_for_malformed_market_data(session):
 
 def test_fixture_backfill_resume_idempotent(session):
     registry = load_registry()
-    service = BackfillService(session, registry, FixtureFredClient(), FixtureMassiveClient())
+    service = BackfillService(
+        session, registry, FixtureFredClient(), FixtureMassiveClient(), validation_client=FixtureYahooHistoricalClient()
+    )
     kwargs = {"profile": "core", "start": date(2026, 1, 2), "end": date(2026, 1, 6), "only": ["DGS10", "SPY"]}
     assert service.backfill(**kwargs) == 0
     counts_first = WarehouseRepository(session).counts()
@@ -190,6 +193,72 @@ def test_fixture_backfill_resume_idempotent(session):
     assert counts_second["canonical_observations"] == counts_first["canonical_observations"]
     assert counts_second["daily_bars"] == counts_first["daily_bars"]
     assert counts_second["canonical_daily_bars"] == counts_first["canonical_daily_bars"]
+
+
+def test_yahoo_historical_validation_stores_bars_and_does_not_change_canonical(session):
+    registry = load_registry()
+    service = BackfillService(
+        session, registry, FixtureFredClient(), FixtureMassiveClient(), validation_client=FixtureYahooHistoricalClient()
+    )
+    assert service.backfill("core", date(2026, 1, 2), date(2026, 1, 6), only=["SPY"]) == 0
+    repo = WarehouseRepository(session)
+    massive_source = repo.source("massive")
+    yahoo_source = repo.source("yahoo")
+    instrument = repo.instrument("SPY")
+    massive_bars = session.scalars(
+        select(m.MarketBarDaily).where(
+            m.MarketBarDaily.instrument_id == instrument.id,
+            m.MarketBarDaily.source_id == massive_source.id,
+        )
+    ).all()
+    yahoo_bars = session.scalars(
+        select(m.MarketBarDaily).where(
+            m.MarketBarDaily.instrument_id == instrument.id,
+            m.MarketBarDaily.source_id == yahoo_source.id,
+        )
+    ).all()
+    canonical = session.scalars(select(m.CanonicalMarketBarDaily)).all()
+    discrepancies = session.scalars(select(m.SourceDiscrepancy)).all()
+    assert len(massive_bars) == 3
+    assert len(yahoo_bars) == 3
+    assert len(canonical) == 3
+    assert all(row.canonical_source_id == massive_source.id for row in canonical)
+    assert {row.field_name for row in discrepancies} == {"close", "volume"}
+    assert {row.status for row in discrepancies} == {"match"}
+    counts = repo.counts()
+    assert service.backfill("core", date(2026, 1, 2), date(2026, 1, 6), only=["SPY"]) == 0
+    rerun_counts = repo.counts()
+    assert rerun_counts["daily_bars"] == counts["daily_bars"]
+    assert rerun_counts["canonical_daily_bars"] == counts["canonical_daily_bars"]
+    assert rerun_counts["source_discrepancies"] == counts["source_discrepancies"]
+
+
+def test_yahoo_discrepancy_classification_material_and_not_comparable(session):
+    repo = WarehouseRepository(session)
+    service = BackfillService(session, load_registry(), FixtureFredClient(), FixtureMassiveClient())
+    assert service._classify_difference(Decimal("100"), Decimal("100.10"), Decimal("0.002"), Decimal("0.01")) == "minor_difference"
+    assert service._classify_difference(Decimal("100"), Decimal("103"), Decimal("0.002"), Decimal("0.01")) == "material_difference"
+    assert service._classify_difference(Decimal("0"), Decimal("1"), Decimal("0.002"), Decimal("0.01")) == "not_comparable"
+    payload = repo.raw_payload("massive", "fixture", {"symbol": "SPY"}, {"source": "massive"})
+    _, massive_bar = repo.insert_daily_bar(
+        "SPY",
+        "massive",
+        payload,
+        {
+            "trade_date": date(2026, 1, 2),
+            "open": 100,
+            "high": 101,
+            "low": 99,
+            "close": 100,
+            "adjusted_close": None,
+            "volume": 100,
+            "adjusted": False,
+        },
+    )
+    yahoo_bar = DailyBar(massive_bar.trade_date, Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100)
+    service._compare_yahoo_bar("SPY", massive_bar.trade_date, yahoo_bar, payload.id, collector_run_id=None)
+    discrepancy = session.scalar(select(m.SourceDiscrepancy).where(m.SourceDiscrepancy.field_name == "close"))
+    assert discrepancy.status == "not_comparable"
 
 
 def test_dynamic_24_calendar_month_window():
@@ -236,7 +305,8 @@ def test_no_credentials_in_payload_metadata(session):
 def test_future_quote_polling_disabled_by_default():
     registry = load_registry()
     assert registry.profiles["future_realtime_quote_watchlist"]["enabled_by_default"] is False
-    assert registry.sources["yahoo"]["enabled"] is False
+    assert registry.sources["yahoo"]["enabled"] is True
+    assert registry.sources["yahoo"]["future_quote_capability"] is True
 
 
 def test_market_calendar_completed_session_rules():

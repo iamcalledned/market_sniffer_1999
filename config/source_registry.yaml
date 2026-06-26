@@ -42,7 +42,7 @@ sources:
   yahoo:
     code: yahoo
     display_name: Yahoo Finance
-    enabled: false
+    enabled: true
     credential_env: null
     canonical_responsibilities: []
     validation_responsibilities:

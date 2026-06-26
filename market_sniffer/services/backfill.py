@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import time
 from datetime import date
+from decimal import Decimal
 from typing import Iterable
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from market_sniffer.collectors.base import FredClient, MarketDataClient, ProviderError, QuoteClient
+from market_sniffer.collectors.base import FredClient, MarketDataClient, ProviderError, QuoteClient, RateLimitError
+from market_sniffer.db import models as m
 from market_sniffer.db.repository import WarehouseRepository
 from market_sniffer.services.registry_service import Registry
 
@@ -18,6 +22,7 @@ class BackfillService:
         fred_client: FredClient,
         market_client: MarketDataClient,
         quote_client: QuoteClient | None = None,
+        validation_client: MarketDataClient | None = None,
     ):
         self.session = session
         self.registry = registry
@@ -25,6 +30,7 @@ class BackfillService:
         self.fred_client = fred_client
         self.market_client = market_client
         self.quote_client = quote_client
+        self.validation_client = validation_client
 
     def backfill(
         self,
@@ -35,34 +41,49 @@ class BackfillService:
         dry_run: bool = False,
         continue_on_error: bool = False,
         fred_end: date | None = None,
+        resume: bool = False,
+        force: bool = False,
     ) -> int:
         only_set = set(only or [])
         parent = self.repo.start_run("backfill", profile, date_from=start, date_to=end)
         failures = 0
         try:
             if profile in {"core", "fred_macro"}:
-                failures += self._fred(start, fred_end or end, only_set, parent.id, dry_run, continue_on_error)
+                failures += self._fred(start, fred_end or end, only_set, parent.id, dry_run, continue_on_error, resume, force)
             if profile in {"core", "daily_market"}:
-                failures += self._daily_market(start, end, only_set, parent.id, dry_run, continue_on_error)
+                failures += self._daily_market(start, end, only_set, parent.id, dry_run, continue_on_error, resume, force)
             if profile == "core":
-                failures += self._corporate_actions(start, end, only_set, parent.id, dry_run, continue_on_error)
-                self._yahoo_validation_sample(start, end, only_set, parent.id, dry_run)
+                failures += self._corporate_actions(start, end, only_set, parent.id, dry_run, continue_on_error, resume, force)
+                failures += self._yahoo_validation_sample(start, end, only_set, parent.id, dry_run, continue_on_error, resume, force)
             self.repo.finish_run(parent, "failed" if failures else "succeeded")
             return failures
         except Exception as exc:
             self.repo.finish_run(parent, "failed", {"error": str(exc)})
             raise
 
-    def _fred(self, start: date, end: date, only: set[str], parent_run_id: int, dry_run: bool, continue_on_error: bool) -> int:
+    def _fred(
+        self,
+        start: date,
+        end: date,
+        only: set[str],
+        parent_run_id: int,
+        dry_run: bool,
+        continue_on_error: bool,
+        resume: bool,
+        force: bool,
+    ) -> int:
         failures = 0
         for code, meta in self.registry.series.items():
             if only and code not in only and f"FRED:{code}" not in only:
                 continue
             if meta.get("collection_profile") != "fred_macro" or not meta.get("backfill", True):
                 continue
+            if resume and not force and self._completed_run_exists("fred_observations", "series", code, start, end):
+                print(f"resume skip fred {code} {start}..{end}: completed")
+                continue
             run = self.repo.start_run("fred_observations", "fred_macro", "fred", parent_run_id, "series", code, start, end)
             try:
-                payload, observations = self.fred_client.observations(meta["source_id"], start, end)
+                payload, observations = self._with_retries(lambda: self.fred_client.observations(meta["source_id"], start, end))
                 raw_payload = self.repo.raw_payload(
                     "fred",
                     "series/observations",
@@ -101,13 +122,26 @@ class BackfillService:
         return failures
 
     def _corporate_actions(
-        self, start: date, end: date, only: set[str], parent_run_id: int, dry_run: bool, continue_on_error: bool
+        self,
+        start: date,
+        end: date,
+        only: set[str],
+        parent_run_id: int,
+        dry_run: bool,
+        continue_on_error: bool,
+        resume: bool,
+        force: bool,
     ) -> int:
         failures = 0
         for symbol, meta in self.registry.instruments.items():
             if only and symbol not in only and f"MASSIVE:{symbol}" not in only and f"POLYGON:{symbol}" not in only:
                 continue
             if not meta.get("daily", True):
+                continue
+            if resume and not force and self._completed_run_exists(
+                "massive_corporate_actions", "instrument", symbol, start, end
+            ):
+                print(f"resume skip massive corporate_actions {symbol} {start}..{end}: completed")
                 continue
             run = self.repo.start_run(
                 "massive_corporate_actions",
@@ -120,7 +154,7 @@ class BackfillService:
                 end,
             )
             try:
-                payload, actions = self.market_client.corporate_actions(symbol, start, end)
+                payload, actions = self._with_retries(lambda: self.market_client.corporate_actions(symbol, start, end))
                 raw_payload = self.repo.raw_payload(
                     "massive",
                     "corporate_actions",
@@ -151,14 +185,26 @@ class BackfillService:
         return failures
 
     def _yahoo_validation_sample(
-        self, start: date, end: date, only: set[str], parent_run_id: int, dry_run: bool
-    ) -> None:
+        self,
+        start: date,
+        end: date,
+        only: set[str],
+        parent_run_id: int,
+        dry_run: bool,
+        continue_on_error: bool,
+        resume: bool,
+        force: bool,
+    ) -> int:
+        failures = 0
         sample = self.registry.profiles.get("validation", {}).get("sample_symbols", [])
         for symbol in sample:
             if only and symbol not in only and f"YAHOO:{symbol}" not in only:
                 continue
+            if resume and not force and self._completed_run_exists("yahoo_validation_history", "instrument", symbol, start, end):
+                print(f"resume skip yahoo validation {symbol} {start}..{end}: completed")
+                continue
             run = self.repo.start_run(
-                "yahoo_validation_sample",
+                "yahoo_validation_history",
                 "validation",
                 "yahoo",
                 parent_run_id,
@@ -167,33 +213,64 @@ class BackfillService:
                 start,
                 end,
             )
-            if not dry_run:
-                new_discrepancy = self.repo.record_discrepancy(
-                    symbol,
-                    end,
-                    "massive",
+            try:
+                if self.validation_client is None:
+                    raise ProviderError("Yahoo historical validation client is not configured")
+                payload, bars = self._with_retries(lambda: self.validation_client.daily_bars(symbol, start, end))
+                raw_payload = self.repo.raw_payload(
                     "yahoo",
-                    "close",
-                    "validation_unavailable",
+                    "historical_daily_bars",
+                    {"symbol": symbol, "from": start.isoformat(), "to": end.isoformat()},
+                    payload,
+                    retention_class="validation",
                 )
-                if new_discrepancy:
-                    self.repo.record_event(
-                        "source_discrepancy",
-                        "Yahoo validation sample is registered but live validation is disabled in v1.",
-                        "info",
-                        "yahoo",
-                        symbol=symbol,
-                        collector_run_id=run.id,
-                        observation_date=end,
-                        details={"status": "validation_unavailable"},
-                    )
-            self.repo.finish_run(run, "succeeded")
-            print(
-                f"yahoo validation {symbol} {start}..{end} "
-                "fetched=0 inserted=0 skipped=0 failed=0 status=validation_unavailable"
-            )
+                run.fetched_count = len(bars)
+                if not dry_run:
+                    for bar in bars:
+                        inserted, _source_bar = self.repo.insert_daily_bar(symbol, "yahoo", raw_payload, bar.asdict())
+                        if inserted:
+                            run.inserted_count += 1
+                        else:
+                            run.skipped_count += 1
+                        self._compare_yahoo_bar(symbol, bar.trade_date, bar, raw_payload.id, run.id)
+                self.repo.finish_run(run, "succeeded")
+                print(
+                    f"yahoo validation {symbol} {start}..{end} "
+                    f"fetched={run.fetched_count} inserted={run.inserted_count} "
+                    f"skipped={run.skipped_count} failed={run.failed_count}"
+                )
+            except ProviderError as exc:
+                failures += 1
+                run.failed_count = 1
+                self.repo.record_event(
+                    exc.event_type,
+                    str(exc),
+                    "error",
+                    "yahoo",
+                    symbol=symbol,
+                    collector_run_id=run.id,
+                    observation_date=end,
+                    details={"status": "validation_unavailable"},
+                )
+                self.repo.record_discrepancy(symbol, end, "massive", "yahoo", "close", "validation_unavailable")
+                self.repo.finish_run(run, "failed", {"error": str(exc)})
+                print(f"yahoo validation {symbol} {start}..{end} fetched=0 inserted=0 skipped=0 failed=1")
+                if not continue_on_error:
+                    raise
+        self.session.commit()
+        return failures
 
-    def _daily_market(self, start: date, end: date, only: set[str], parent_run_id: int, dry_run: bool, continue_on_error: bool) -> int:
+    def _daily_market(
+        self,
+        start: date,
+        end: date,
+        only: set[str],
+        parent_run_id: int,
+        dry_run: bool,
+        continue_on_error: bool,
+        resume: bool,
+        force: bool,
+    ) -> int:
         failures = 0
         profile_cfg = self.registry.profiles.get("daily_market", {})
         precedence = profile_cfg.get("canonical_source_precedence", ["massive", "yahoo"])
@@ -204,9 +281,12 @@ class BackfillService:
                 continue
             if not meta.get("daily", True) or "daily_market" not in meta.get("collection_profiles", []):
                 continue
+            if resume and not force and self._completed_run_exists("massive_daily_bars", "instrument", symbol, start, end):
+                print(f"resume skip massive {symbol} {start}..{end}: completed")
+                continue
             run = self.repo.start_run("massive_daily_bars", "daily_market", "massive", parent_run_id, "instrument", symbol, start, end)
             try:
-                payload, bars = self.market_client.daily_bars(symbol, start, end)
+                payload, bars = self._with_retries(lambda: self.market_client.daily_bars(symbol, start, end))
                 raw_payload = self.repo.raw_payload(
                     "massive",
                     "aggs/ticker/range/1/day",
@@ -233,6 +313,8 @@ class BackfillService:
                             allow_yahoo_fallback=fallback_allowed,
                         )
                 self.repo.finish_run(run, "succeeded" if run.failed_count == 0 else "failed")
+                if run.failed_count == 0:
+                    self.repo.resolve_events({"collector_failure", "rate_limit_hit"}, "massive", symbol=symbol)
                 print(f"massive {symbol} {start}..{end} fetched={run.fetched_count} inserted={run.inserted_count} skipped={run.skipped_count} failed={run.failed_count}")
             except ProviderError as exc:
                 failures += 1
@@ -244,6 +326,128 @@ class BackfillService:
                     raise
         self.session.commit()
         return failures
+
+    def _completed_run_exists(
+        self, collector_name: str, target_type: str, target_key: str, start: date, end: date
+    ) -> bool:
+        return (
+            self.session.scalar(
+                select(m.CollectorRun.id).where(
+                    m.CollectorRun.collector_name == collector_name,
+                    m.CollectorRun.target_type == target_type,
+                    m.CollectorRun.target_key == target_key,
+                    m.CollectorRun.date_from == start,
+                    m.CollectorRun.date_to == end,
+                    m.CollectorRun.status == "succeeded",
+                )
+            )
+            is not None
+        )
+
+    def _with_retries(self, operation):
+        attempts = int(self.registry.profiles.get("core", {}).get("retry_attempts", 3))
+        delay = 0.25
+        for attempt in range(1, attempts + 1):
+            try:
+                return operation()
+            except RateLimitError:
+                if attempt >= attempts:
+                    raise
+                time.sleep(delay)
+                delay *= 2
+            except ProviderError as exc:
+                if "connection error" not in str(exc).lower() or attempt >= attempts:
+                    raise
+                time.sleep(delay)
+                delay *= 2
+        return operation()
+
+    def _compare_yahoo_bar(
+        self, symbol: str, trade_date: date, yahoo_bar, yahoo_raw_payload_id: int, collector_run_id: int | None
+    ) -> None:
+        inst = self.repo.instrument(symbol)
+        massive = self.repo.source("massive")
+        primary = self.session.scalar(
+            select(m.MarketBarDaily).where(
+                m.MarketBarDaily.instrument_id == inst.id,
+                m.MarketBarDaily.trade_date == trade_date,
+                m.MarketBarDaily.source_id == massive.id,
+            )
+        )
+        if primary is None:
+            self.repo.record_discrepancy(
+                symbol, trade_date, "massive", "yahoo", "close", "validation_unavailable", raw_payload_id=yahoo_raw_payload_id
+            )
+            self.repo.record_event(
+                "source_discrepancy",
+                f"Yahoo validation could not compare {symbol} {trade_date}: missing Massive bar.",
+                "warning",
+                "yahoo",
+                symbol=symbol,
+                collector_run_id=collector_run_id,
+                observation_date=trade_date,
+            )
+            return
+        if primary.price_basis != ("adjusted" if yahoo_bar.adjusted else "unadjusted"):
+            self.repo.record_discrepancy(
+                symbol, trade_date, "massive", "yahoo", "close", "not_comparable", raw_payload_id=yahoo_raw_payload_id
+            )
+            return
+        close_status = self._classify_difference(primary.close, yahoo_bar.close, Decimal("0.002"), Decimal("0.01"))
+        volume_status = self._classify_difference(
+            Decimal(primary.volume or 0),
+            Decimal(yahoo_bar.volume or 0),
+            Decimal("0.02"),
+            Decimal("0.10"),
+        )
+        self.repo.record_discrepancy(
+            symbol,
+            trade_date,
+            "massive",
+            "yahoo",
+            "close",
+            close_status,
+            primary.close,
+            yahoo_bar.close,
+            yahoo_raw_payload_id,
+        )
+        self.repo.record_discrepancy(
+            symbol,
+            trade_date,
+            "massive",
+            "yahoo",
+            "volume",
+            volume_status,
+            Decimal(primary.volume or 0),
+            Decimal(yahoo_bar.volume or 0),
+            yahoo_raw_payload_id,
+        )
+        if "material_difference" in {close_status, volume_status}:
+            self.repo.record_event(
+                "source_discrepancy",
+                f"Material Yahoo validation difference for {symbol} {trade_date}.",
+                "warning",
+                "yahoo",
+                symbol=symbol,
+                collector_run_id=collector_run_id,
+                observation_date=trade_date,
+                details={"close_status": close_status, "volume_status": volume_status},
+            )
+
+    @staticmethod
+    def _classify_difference(
+        primary: Decimal, validation: Decimal, minor_relative: Decimal, material_relative: Decimal
+    ) -> str:
+        if primary == validation:
+            return "match"
+        if primary == 0:
+            return "not_comparable"
+        relative = abs(primary - validation) / abs(primary)
+        if relative <= minor_relative:
+            return "minor_difference"
+        if relative >= material_relative:
+            return "material_difference"
+        return "minor_difference"
 
     def collect_fixture_quote(self, symbol: str) -> bool:
         if self.quote_client is None:

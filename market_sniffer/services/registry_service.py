@@ -128,6 +128,14 @@ def validate_registry(registry: Registry) -> None:
             raise RegistryError(f"profile {name} references unknown source {profile['source']}")
         if name == "daily_market" and not profile.get("canonical_source_precedence"):
             raise RegistryError("daily_market profile missing canonical_source_precedence")
+        if profile.get("retention_class") and profile["retention_class"] not in {"quote", "intraday", "validation"}:
+            raise RegistryError(f"profile {name} has invalid retention_class {profile['retention_class']}")
+        if profile.get("retention_days") is not None and int(profile["retention_days"]) <= 0:
+            raise RegistryError(f"profile {name} retention_days must be positive")
+        if profile.get("canonical_source_precedence"):
+            for source_code in profile["canonical_source_precedence"]:
+                if source_code not in registry.sources:
+                    raise RegistryError(f"profile {name} precedence references unknown source {source_code}")
 
 
 def describe_key(registry: Registry, key: str) -> dict[str, Any]:

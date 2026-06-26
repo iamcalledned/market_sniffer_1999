@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_ENV_LOADED = False
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,25 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def load_dotenv(path: Path | None = None) -> None:
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+    env_path = path or PROJECT_ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key, value = stripped.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+    _ENV_LOADED = True
+
+
 def get_settings() -> Settings:
+    load_dotenv()
     db_path = Path(os.getenv("MARKET_SNIFFER_DB_PATH", "runtime/market_sniffer.sqlite3"))
     if not db_path.is_absolute():
         db_path = PROJECT_ROOT / db_path

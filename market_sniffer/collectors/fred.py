@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from market_sniffer.collectors.base import FredObservation, MissingCredentialError, ProviderError
+from market_sniffer.collectors.base import FredObservation, MissingCredentialError, ProviderError, RateLimitError
 
 
 class FredApiClient:
@@ -23,8 +23,13 @@ class FredApiClient:
             "observation_start": start.isoformat(),
             "observation_end": end.isoformat(),
         }
-        response = httpx.get("https://api.stlouisfed.org/fred/series/observations", params=params, timeout=30)
+        try:
+            response = httpx.get("https://api.stlouisfed.org/fred/series/observations", params=params, timeout=30)
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"FRED connection error for {series_id}: {exc.__class__.__name__}") from exc
         payload = response.json()
+        if response.status_code == 429:
+            raise RateLimitError(f"FRED rate limit hit for {series_id}")
         if response.status_code >= 400 or "error_code" in payload:
             raise ProviderError(f"FRED error for {series_id}: {payload.get('error_message', response.text)}")
         observations: list[FredObservation] = []

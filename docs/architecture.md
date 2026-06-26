@@ -30,6 +30,8 @@ Yahoo Finance has three roles: validation, enrichment, and future real-time or n
 
 Source precedence lives in `config/collection_profiles.yaml`. The initial rule is Massive/Polygon first, Yahoo only as explicit fallback. If fallback is allowed, the warehouse records quality and discrepancy evidence and marks the canonical row as fallback.
 
+Yahoo historical validation is a separate flow. It stores Yahoo source bars and discrepancy records but does not alter canonical selection while a valid Massive/Polygon bar exists.
+
 ## FRED Vintages
 
 FRED observations retain `realtime_start`, `realtime_end`, retrieval timestamp, raw payload, raw observation, quality status, and `is_latest_vintage`. New vintages are inserted separately; older vintages are not overwritten.

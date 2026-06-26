@@ -1,10 +1,82 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from market_sniffer.collectors.base import MissingCredentialError
+from market_sniffer.collectors.base import DailyBar, MissingCredentialError, ProviderError
+from market_sniffer.services.dates import business_days
+
+
+class YahooHistoricalClient:
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+
+    def daily_bars(self, symbol: str, start: date, end: date) -> tuple[dict[str, Any], list[DailyBar]]:
+        if not self.enabled:
+            raise MissingCredentialError("Yahoo historical validation is disabled; set YAHOO_ENABLED=true")
+        try:
+            import yfinance as yf  # type: ignore
+        except ImportError as exc:
+            raise MissingCredentialError("Install the yahoo extra to use Yahoo historical validation") from exc
+        ticker = yf.Ticker(symbol)
+        # yfinance end is exclusive for history(); include the requested end date.
+        frame = ticker.history(start=start.isoformat(), end=(end + timedelta(days=1)).isoformat(), interval="1d")
+        if frame is None or frame.empty:
+            raise ProviderError(f"Yahoo returned no historical daily bars for {symbol}")
+        rows: list[dict[str, Any]] = []
+        bars: list[DailyBar] = []
+        for idx, row in frame.iterrows():
+            trade_date = idx.date()
+            raw = {
+                "date": trade_date.isoformat(),
+                "open": None if row.get("Open") is None else float(row["Open"]),
+                "high": None if row.get("High") is None else float(row["High"]),
+                "low": None if row.get("Low") is None else float(row["Low"]),
+                "close": None if row.get("Close") is None else float(row["Close"]),
+                "adj_close": None if row.get("Adj Close") is None else float(row["Adj Close"]),
+                "volume": None if row.get("Volume") is None else int(row["Volume"]),
+            }
+            rows.append(raw)
+            adjusted_close = raw["adj_close"] if raw["adj_close"] is not None else raw["close"]
+            bars.append(
+                DailyBar(
+                    trade_date=trade_date,
+                    open=Decimal(str(raw["open"])),
+                    high=Decimal(str(raw["high"])),
+                    low=Decimal(str(raw["low"])),
+                    close=Decimal(str(raw["close"])),
+                    adjusted_close=Decimal(str(adjusted_close)) if adjusted_close is not None else None,
+                    volume=raw["volume"],
+                    adjusted=raw["adj_close"] is not None,
+                )
+            )
+        return {"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "rows": rows}, bars
+
+    def corporate_actions(self, symbol: str, start: date, end: date) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        return {"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "rows": []}, []
+
+
+class FixtureYahooHistoricalClient:
+    def daily_bars(self, symbol: str, start: date, end: date) -> tuple[dict[str, Any], list[DailyBar]]:
+        bars: list[DailyBar] = []
+        for idx, day in enumerate(business_days(start, min(end, start.replace(day=min(start.day + 4, 28))))):
+            base = Decimal("100") + Decimal(idx) + Decimal(sum(ord(c) for c in symbol) % 20)
+            bars.append(
+                DailyBar(
+                    trade_date=day,
+                    open=base,
+                    high=base + Decimal("1"),
+                    low=base - Decimal("1"),
+                    close=base + Decimal("0.25"),
+                    adjusted_close=base + Decimal("0.25"),
+                    volume=1000000 + idx,
+                )
+            )
+        return {"symbol": symbol, "resultsCount": len(bars), "fixture": True}, bars
+
+    def corporate_actions(self, symbol: str, start: date, end: date) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        return {"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "results": [], "fixture": True}, []
 
 
 class YahooQuoteClient:

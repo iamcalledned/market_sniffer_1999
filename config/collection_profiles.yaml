@@ -22,7 +22,9 @@ profiles:
     description: "Controlled Yahoo validation sample; does not promote Yahoo to canonical."
     source: yahoo
     frequency: on_demand
-    retention: indefinite
+    retention: "90 days unless linked to discrepancy or quality event"
+    retention_class: validation
+    retention_days: 90
     enabled_by_default: false
     sample_symbols: ["SPY", "QQQ", "TLT", "NVDA"]
   future_intraday_watchlist:
@@ -30,6 +32,8 @@ profiles:
     source: massive
     frequency: intraday
     retention: "planned rolling 90 days"
+    retention_class: intraday
+    retention_days: 90
     enabled_by_default: false
     intervals: ["1m", "5m"]
   future_realtime_quote_watchlist:
@@ -37,4 +41,6 @@ profiles:
     source: yahoo
     frequency: on_demand
     retention: "snapshot retention policy to be decided before activation"
+    retention_class: quote
+    retention_days: 90
     enabled_by_default: false

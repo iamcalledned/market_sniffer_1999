@@ -22,7 +22,7 @@ Run the constrained live verification first:
 python -m market_sniffer.cli verify-foundation --days 5
 ```
 
-It loads DGS10, BAMLH0A0HYM2, SPY, QQQ, Yahoo validation records, canonicalizes bars, runs health checks, reruns the same range, and reports idempotency counts. Do not run the full production seed until this passes or provider limitations are explicitly accepted.
+It uses a clean `/tmp` verification database by default, tests live provider capability, loads DGS10, BAMLH0A0HYM2, SPY, QQQ, Yahoo validation records, canonicalizes bars, runs health checks, reruns the same range, and reports idempotency counts. Do not run the full production seed until this passes or provider limitations are explicitly accepted.
 
 ## Incremental Collection
 
@@ -30,7 +30,7 @@ It loads DGS10, BAMLH0A0HYM2, SPY, QQQ, Yahoo validation records, canonicalizes 
 python -m market_sniffer.cli collect --profile daily_market
 ```
 
-Incremental collection defaults to the current date unless overridden.
+Incremental market collection defaults to the most recent completed U.S. equity session unless overridden.
 
 ## Fixture Smoke Backfill
 
@@ -41,7 +41,9 @@ python -m market_sniffer.cli backfill --profile core --from 2026-01-02 --to 2026
 
 ## Resume and Retry
 
-Daily bars and FRED observations use uniqueness constraints, so rerunning an interrupted date range skips completed rows. `collector_runs` and child runs preserve fetched, inserted, skipped, and failed counts plus error context. `--continue-on-error` records source failures and keeps moving.
+Daily bars and FRED observations use uniqueness constraints, so rerunning an interrupted date range skips completed rows. `--resume` additionally skips target/date ranges with prior succeeded collector runs. `collector_runs` preserve fetched, inserted, skipped, and failed counts plus error context. `--continue-on-error` records source failures and keeps moving.
+
+`--force` is constrained: it requires explicit `--from`, `--to`, and at least one `--only` target. It does not delete raw lineage and still relies on uniqueness rules to prevent duplicate rows.
 
 ## Health and Inspection
 
@@ -58,6 +60,26 @@ python -m market_sniffer.cli inspect instrument MASSIVE:SPY --from 2024-01-01 --
 
 Missing credentials: run `python -m market_sniffer.cli validate-sources`. Provider entitlement or rate-limit errors become `data_quality_events`.
 
+Live capability validation:
+
+```bash
+python -m market_sniffer.cli validate-sources --live
+```
+
+This runs small FRED and Massive/Polygon checks, and Yahoo historical validation when Yahoo is enabled. It reports success/failure, failure class, row counts, and required action without running a production backfill.
+
+## Yahoo Historical Validation
+
+Yahoo historical validation is registry-driven by the `validation` profile. It retrieves bounded daily history for the validation sample, stores Yahoo rows in `market_bars_daily`, compares matching Massive/Polygon source bars, and writes `source_discrepancies`.
+
+Initial comparison policy:
+
+- close: match if equal, minor within 0.2%, material at or above 1%;
+- volume: match if equal, minor within 2%, material at or above 10%;
+- adjusted/unadjusted basis mismatch: `not_comparable`;
+- missing Massive bar or Yahoo failure: `validation_unavailable`;
+- date alignment: compare matching completed trade dates only.
+
 Schema changes: add a SQLAlchemy model change and a new Alembic revision. Do not hand-edit a live SQLite schema.
 
 Adding a series or instrument: update the registry YAML, run `registry validate`, then `db init` to sync registry records.
@@ -71,6 +93,13 @@ FRED revisions are inserted as separate vintages keyed by observation date and `
 ## Retention
 
 FRED, daily OHLCV, corporate action, canonical, collector-run, quality-event, and discrepancy lineage is retained indefinitely. Quote, intraday, repeated validation, and high-frequency snapshot raw payload bodies are eligible for configured pruning, initially 90 days. Pruning is manual and dry-run capable; incident-linked and canonical-linked payloads are protected.
+
+Use:
+
+```bash
+python -m market_sniffer.cli retention prune --scope validation --dry-run
+python -m market_sniffer.cli retention prune --scope validation --confirm
+```
 
 ## Quote Quality
 

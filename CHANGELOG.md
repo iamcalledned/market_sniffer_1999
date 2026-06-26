@@ -19,3 +19,6 @@
 - Added quote delay, tradeability, stale status, and quality semantics.
 - Strengthened registry validation and source precedence configuration.
 - Added constrained `verify-foundation --days 5` workflow.
+- Added Yahoo historical validation bars and Massive/Yahoo discrepancy classification.
+- Added live source capability validation mode and `.env` loading.
+- Made `--resume` and constrained `--force` operational.

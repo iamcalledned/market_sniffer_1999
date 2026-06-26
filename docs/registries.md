@@ -22,3 +22,5 @@ python -m market_sniffer.cli registry validate
 ```
 
 Validation checks required fields, duplicate YAML keys, source references, canonical source references, collection profile references, future quote/intraday flags, and daily-market source precedence.
+
+`config/collection_profiles.yaml` also defines batch size, validation sample symbols, canonical source precedence, fallback policy, and retention classes/days for validation, future intraday, and future quote payloads.
