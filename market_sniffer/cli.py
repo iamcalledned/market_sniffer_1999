@@ -183,14 +183,92 @@ def cmd_status(_args: argparse.Namespace) -> int:
 def cmd_data_health(args: argparse.Namespace) -> int:
     session, _ = _session()
     with session:
+        registry = load_registry()
         service = DataQualityService(session)
         new_events = service.check_quote_freshness(args.quote_max_age_minutes)
         summary = service.summary()
         unresolved = session.scalars(select(m.DataQualityEvent).where(m.DataQualityEvent.resolved.is_(False))).all()
         print(f"new_quote_freshness_events={new_events}")
         print(f"unresolved_quality_events={len(unresolved)}")
+        print(
+            json.dumps(
+                {"active_validation": validation_summary(session, registry, current=True)},
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        )
         print(json.dumps(summary, indent=2, sort_keys=True))
     return 1 if unresolved and args.fail_on_events else 0
+
+
+def validation_summary(
+    session,
+    registry,
+    current: bool = True,
+    symbols: list[str] | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    active_rule = registry.validation["daily_bars"]["comparison_rule_version"]
+    statuses = ["match", "minor_difference", "material_difference", "not_comparable", "validation_unavailable"]
+    stmt = select(m.SourceDiscrepancy, m.Instrument.symbol).join(m.Instrument, m.SourceDiscrepancy.instrument_id == m.Instrument.id)
+    if current:
+        stmt = stmt.where(m.SourceDiscrepancy.comparison_rule_version == active_rule)
+    if symbols:
+        stmt = stmt.where(m.Instrument.symbol.in_(symbols))
+    if date_from:
+        stmt = stmt.where(m.SourceDiscrepancy.trade_date >= date_from)
+    if date_to:
+        stmt = stmt.where(m.SourceDiscrepancy.trade_date <= date_to)
+    rows = session.execute(stmt).all()
+    by_status = {status: 0 for status in statuses}
+    by_field: dict[str, dict[str, int]] = {}
+    by_symbol: dict[str, dict[str, int]] = {}
+    by_rule: dict[str, dict[str, int]] = {}
+    for discrepancy, symbol in rows:
+        by_status[discrepancy.status] = by_status.get(discrepancy.status, 0) + 1
+        by_field.setdefault(discrepancy.field_name, {status: 0 for status in statuses})[discrepancy.status] += 1
+        by_symbol.setdefault(symbol, {status: 0 for status in statuses})[discrepancy.status] += 1
+        by_rule.setdefault(discrepancy.comparison_rule_version, {status: 0 for status in statuses})[discrepancy.status] += 1
+    legacy_stmt = select(m.SourceDiscrepancy).where(m.SourceDiscrepancy.comparison_rule_version != active_rule)
+    if symbols:
+        legacy_stmt = legacy_stmt.join(m.Instrument, m.SourceDiscrepancy.instrument_id == m.Instrument.id).where(m.Instrument.symbol.in_(symbols))
+    if date_from:
+        legacy_stmt = legacy_stmt.where(m.SourceDiscrepancy.trade_date >= date_from)
+    if date_to:
+        legacy_stmt = legacy_stmt.where(m.SourceDiscrepancy.trade_date <= date_to)
+    legacy_count = len(session.scalars(legacy_stmt).all())
+    return {
+        "active_rule_version": active_rule,
+        "mode": "current" if current else "all_rules",
+        "symbols": symbols or "all",
+        "from": date_from,
+        "to": date_to,
+        "counts_by_status": by_status,
+        "counts_by_field": by_field,
+        "counts_by_symbol": by_symbol,
+        "counts_by_rule": by_rule,
+        "legacy_audit_row_count": legacy_count,
+    }
+
+
+def cmd_validation(args: argparse.Namespace) -> int:
+    registry = load_registry()
+    current = not args.all_rules
+    date_from = _parse_date(args.date_from)
+    date_to = _parse_date(args.date_to)
+    session, _ = _session()
+    with session:
+        print(
+            json.dumps(
+                validation_summary(session, registry, current=current, symbols=args.symbols, date_from=date_from, date_to=date_to),
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+        )
+    return 0
 
 
 def cmd_retention(args: argparse.Namespace) -> int:
@@ -455,6 +533,17 @@ def build_parser() -> argparse.ArgumentParser:
     validate_history.add_argument("--continue-on-error", action="store_true")
     validate_history.add_argument("--fixture", action="store_true")
     validate_history.set_defaults(func=cmd_validate_history)
+
+    validation_cmd = sub.add_parser("validation")
+    validation_sub = validation_cmd.add_subparsers(dest="validation_command", required=True)
+    validation_summary_parser = validation_sub.add_parser("summary")
+    mode = validation_summary_parser.add_mutually_exclusive_group()
+    mode.add_argument("--current", action="store_true", help="Show only the active comparison rule version.")
+    mode.add_argument("--all-rules", action="store_true", help="Show current and legacy/audit comparison rule versions.")
+    validation_summary_parser.add_argument("--symbols", action="append")
+    validation_summary_parser.add_argument("--from", dest="date_from")
+    validation_summary_parser.add_argument("--to", dest="date_to")
+    validation_summary_parser.set_defaults(func=cmd_validation)
 
     status = sub.add_parser("status")
     status.set_defaults(func=cmd_status)

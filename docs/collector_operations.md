@@ -74,18 +74,21 @@ Yahoo historical validation is registry-driven by the `validation` profile. It r
 
 Current comparison policy:
 
-- rule version: `daily_bar_validation_v2`;
-- price basis: compare only allowed pairs from `config/collection_profiles.yaml`;
+- rule version: `daily_bar_validation_v3`;
+- eligibility: compare only approved source/field pairs from `config/collection_profiles.yaml`;
 - close: match within configured match tolerance, minor within 0.2%, material at or above 1%;
 - volume: match within configured match tolerance, minor within 2%, material at or above 10%;
 - incompatible basis pair: `not_comparable` with structured reason details;
 - missing Massive bar or Yahoo failure: `validation_unavailable`;
 - date alignment: compare matching completed trade dates only.
+- corporate-action guardrail: if known corporate actions are present in a requested validation range, record a review event instead of treating compatibility as universally proven.
 
 Revalidate a bounded range with:
 
 ```bash
 python -m market_sniffer.cli validate-history --symbols SPY --symbols QQQ --from 2026-06-18 --to 2026-06-25
+python -m market_sniffer.cli validation summary --current
+python -m market_sniffer.cli validation summary --all-rules
 ```
 
 Schema changes: add a SQLAlchemy model change and a new Alembic revision. Do not hand-edit a live SQLite schema.

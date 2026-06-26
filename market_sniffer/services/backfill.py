@@ -96,6 +96,23 @@ class BackfillService:
                 date_to=end,
             )
             try:
+                corporate_action_count = self._corporate_action_count(symbol, start, end)
+                if corporate_action_count:
+                    self.repo.record_event(
+                        "validation_adjustment_review",
+                        "Validation comparison completed, but adjustment compatibility should be reviewed because a corporate action occurred in the requested range.",
+                        "warning",
+                        "yahoo",
+                        symbol=symbol,
+                        collector_run_id=run.id,
+                        observation_date=end,
+                        details={
+                            "corporate_action_count": corporate_action_count,
+                            "from": start.isoformat(),
+                            "to": end.isoformat(),
+                            "comparison_rule_version": self._daily_validation_policy()["comparison_rule_version"],
+                        },
+                    )
                 massive_payload, massive_bars = self._with_retries(lambda: self.market_client.daily_bars(symbol, start, end))
                 massive_raw = self.repo.raw_payload(
                     "massive",
@@ -152,6 +169,18 @@ class BackfillService:
                     raise
         self.session.commit()
         return summary
+
+    def _corporate_action_count(self, symbol: str, start: date, end: date) -> int:
+        inst = self.repo.instrument(symbol)
+        return len(
+            self.session.scalars(
+                select(m.CorporateAction).where(
+                    m.CorporateAction.instrument_id == inst.id,
+                    m.CorporateAction.ex_date >= start,
+                    m.CorporateAction.ex_date <= end,
+                )
+            ).all()
+        )
 
     def _current_discrepancy_counts(self, symbol: str, trade_date: date) -> dict[str, int]:
         inst = self.repo.instrument(symbol)
@@ -474,7 +503,6 @@ class BackfillService:
     ) -> None:
         policy = self._daily_validation_policy()
         rule_version = str(policy["comparison_rule_version"])
-        allowed_pairs = {tuple(pair) for pair in policy["allowed_price_basis_pairs"]}
         yahoo_basis = getattr(yahoo_bar, "price_basis", None) or (
             yahoo_bar.get("price_basis") if isinstance(yahoo_bar, dict) else None
         )
@@ -524,7 +552,9 @@ class BackfillService:
             )
             return
         primary_basis = primary.price_basis
-        if (primary_basis, yahoo_basis) not in allowed_pairs:
+        close_approval = self._comparison_approval("massive", "yahoo", "close", primary_basis, yahoo_basis)
+        volume_approval = self._comparison_approval("massive", "yahoo", "volume", primary_basis, yahoo_basis)
+        if close_approval is None and volume_approval is None:
             reason = f"incompatible price basis pair {primary_basis}/{yahoo_basis}"
             for field in ["close", "volume"]:
                 self.repo.record_discrepancy(
@@ -549,7 +579,7 @@ class BackfillService:
                         rule_version,
                         "not_comparable",
                     ),
-                )
+            )
             return
         close_policy = policy["close"]
         volume_policy = policy["volume"]
@@ -581,7 +611,7 @@ class BackfillService:
             yahoo_raw_payload_id,
             comparison_rule_version=rule_version,
             details=self._comparison_details(
-                "allowed basis pair",
+                close_approval["reason"] if close_approval else "comparison not approved",
                 "close",
                 trade_date,
                 primary.close,
@@ -590,31 +620,59 @@ class BackfillService:
                 yahoo_basis,
                 rule_version,
                 close_status,
+                close_approval,
             ),
         )
-        self.repo.record_discrepancy(
-            symbol,
-            trade_date,
-            "massive",
-            "yahoo",
-            "volume",
-            volume_status,
-            Decimal(primary.volume or 0),
-            Decimal(yahoo_volume or 0),
-            yahoo_raw_payload_id,
-            comparison_rule_version=rule_version,
-            details=self._comparison_details(
-                "allowed basis pair",
-                "volume",
+        if volume_approval is not None:
+            self.repo.record_discrepancy(
+                symbol,
                 trade_date,
+                "massive",
+                "yahoo",
+                "volume",
+                volume_status,
                 Decimal(primary.volume or 0),
                 Decimal(yahoo_volume or 0),
-                primary_basis,
-                yahoo_basis,
-                rule_version,
-                volume_status,
-            ),
-        )
+                yahoo_raw_payload_id,
+                comparison_rule_version=rule_version,
+                details=self._comparison_details(
+                    volume_approval["reason"],
+                    "volume",
+                    trade_date,
+                    Decimal(primary.volume or 0),
+                    Decimal(yahoo_volume or 0),
+                    primary_basis,
+                    yahoo_basis,
+                    rule_version,
+                    volume_status,
+                    volume_approval,
+                ),
+            )
+        else:
+            self.repo.record_discrepancy(
+                symbol,
+                trade_date,
+                "massive",
+                "yahoo",
+                "volume",
+                "not_comparable",
+                Decimal(primary.volume or 0),
+                Decimal(yahoo_volume or 0),
+                yahoo_raw_payload_id,
+                comparison_rule_version=rule_version,
+                details=self._comparison_details(
+                    "volume comparison not approved for current policy",
+                    "volume",
+                    trade_date,
+                    Decimal(primary.volume or 0),
+                    Decimal(yahoo_volume or 0),
+                    primary_basis,
+                    yahoo_basis,
+                    rule_version,
+                    "not_comparable",
+                    None,
+                ),
+            )
         if "material_difference" in {close_status, volume_status}:
             self.repo.record_event(
                 "source_discrepancy",
@@ -629,6 +687,26 @@ class BackfillService:
 
     def _daily_validation_policy(self) -> dict[str, Any]:
         return self.registry.validation["daily_bars"]
+
+    def _comparison_approval(
+        self,
+        primary_source: str,
+        validation_source: str,
+        field: str,
+        primary_basis: str,
+        validation_basis: str,
+    ) -> dict[str, Any] | None:
+        for pair in self._daily_validation_policy().get("approved_comparison_pairs", []):
+            if (
+                pair.get("primary") == primary_source
+                and pair.get("validation") == validation_source
+                and pair.get("field") == field
+                and pair.get("primary_basis") == primary_basis
+                and pair.get("validation_basis") == validation_basis
+                and pair.get("status") == "approved_for_current_validation"
+            ):
+                return pair
+        return None
 
     @staticmethod
     def _model_value(row: m.MarketBarDaily, field: str) -> Decimal | None:
@@ -655,6 +733,7 @@ class BackfillService:
         validation_price_basis: str | None,
         rule_version: str,
         status: str,
+        approval: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         difference = None
         percentage = None
@@ -675,6 +754,9 @@ class BackfillService:
             "validation_price_basis": validation_price_basis,
             "comparison_rule_version": rule_version,
             "comparison_status": status,
+            "comparison_basis": approval.get("comparison_basis") if approval else None,
+            "comparison_eligible": approval is not None,
+            "basis_confidence": approval.get("status") if approval else "not_approved",
             "reason": reason,
         }
 

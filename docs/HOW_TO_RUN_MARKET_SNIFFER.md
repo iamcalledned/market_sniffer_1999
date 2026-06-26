@@ -77,13 +77,17 @@ For daily market bars, this defaults to the last completed U.S. market session. 
 
 ## Yahoo Validation
 
-Yahoo is validation-only. It never replaces Massive/Polygon canonical bars while a valid Massive/Polygon bar exists. Validation compares only compatible price bases, currently `split_adjusted` Massive/Polygon close and volume against `split_adjusted` Yahoo close and volume. Quote polling remains disabled.
+Yahoo validates selected history only. It never replaces Massive/Polygon canonical bars while a valid Massive/Polygon bar exists. Yahoo `Close` is compared only under the active compatibility policy, and Yahoo `Adj Close` is retained separately. Validation results are evidence, not a replacement source. Quote polling remains disabled.
 
 To revalidate a small completed range:
 
 ```bash
 python -m market_sniffer.cli validate-history --symbols SPY --symbols QQQ --from 2026-06-18 --to 2026-06-25
+python -m market_sniffer.cli validation summary --current
+python -m market_sniffer.cli validation summary --all-rules
 ```
+
+Old validation results may remain in the database for audit. Routine status uses the current rule version.
 
 ## Check Data Health
 

@@ -39,20 +39,20 @@ Yahoo historical validation now calls:
 yfinance.Ticker(symbol).history(..., auto_adjust=False, actions=True)
 ```
 
-Yahoo Close/OHLCV from that call is stored as `split_adjusted`, and Yahoo `Adj Close` is preserved separately. Legacy Yahoo rows collected before this explicit call are labeled `total_return_adjusted`.
+This report originally documented the v2 comparison pass. It has since been superseded by `daily_bar_validation_v3`, which labels Yahoo `Close` as provider-native `provider_adjusted_unknown`, preserves Yahoo `Adj Close` separately, and treats comparison eligibility as policy-driven rather than a universal Yahoo adjustment guarantee.
 
 ## Comparison Policy
 
-Comparison rule version: `daily_bar_validation_v2`.
+Comparison rule version at the time of this report: `daily_bar_validation_v2`. Current active rule version is `daily_bar_validation_v3`.
 
-Policy lives in `config/collection_profiles.yaml`. Current allowed basis pairs are:
+Policy lives in `config/collection_profiles.yaml`. The current v3 policy uses approved source/field pairs. The earlier v2 policy used allowed basis pairs:
 
 ```text
 split_adjusted -> split_adjusted
 raw -> raw
 ```
 
-The validation compares close and volume for compatible pairs. Incompatible basis pairs become `not_comparable` with structured reason details. Missing source rows or failed provider calls become `validation_unavailable`.
+The validation compares close and volume only when the active policy permits it. Incompatible or unapproved pairs become `not_comparable` with structured reason details. Missing source rows or failed provider calls become `validation_unavailable`.
 
 ## Commands Run
 
@@ -123,7 +123,7 @@ Rule-version audit summary:
 | daily_bar_validation_v2 | volume | minor_difference | 10 |
 | validation_v1 | close | not_comparable | 2008 |
 
-Old `validation_v1` rows remain for audit; normal current reporting should use `daily_bar_validation_v2`.
+Old `validation_v1` rows remain for audit. Normal current reporting should use the active rule version, now `daily_bar_validation_v3`.
 
 ## Canonical Source Confirmation
 
@@ -157,12 +157,14 @@ Production basis labels for the same range:
 |---|---|---|---:|
 | massive | QQQ | split_adjusted | 5 |
 | massive | SPY | split_adjusted | 5 |
+| yahoo | QQQ | provider_adjusted_unknown | 5 |
 | yahoo | QQQ | split_adjusted | 5 |
 | yahoo | QQQ | total_return_adjusted | 5 |
+| yahoo | SPY | provider_adjusted_unknown | 5 |
 | yahoo | SPY | split_adjusted | 5 |
 | yahoo | SPY | total_return_adjusted | 5 |
 
-The `total_return_adjusted` Yahoo rows are legacy validation records retained for audit. The current comparable rows are `split_adjusted`.
+The `split_adjusted` and `total_return_adjusted` Yahoo rows are legacy validation records retained for audit. The current v3 Yahoo rows are `provider_adjusted_unknown` and are compared only because the active policy explicitly approves the observed-compatible pair.
 
 ## Data Health
 

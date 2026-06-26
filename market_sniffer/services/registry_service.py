@@ -157,7 +157,9 @@ def validate_registry(registry: Registry) -> None:
     for field in [
         "comparison_rule_version",
         "source_price_basis",
+        "sources",
         "allowed_price_basis_pairs",
+        "approved_comparison_pairs",
         "close",
         "volume",
     ]:
@@ -171,12 +173,36 @@ def validate_registry(registry: Registry) -> None:
             raise RegistryError(f"validation source_price_basis references unknown source {source_code}")
         if basis not in VALID_PRICE_BASES:
             raise RegistryError(f"validation source {source_code} has invalid price_basis {basis}")
+    sources = daily_validation["sources"]
+    if not isinstance(sources, dict):
+        raise RegistryError("validation.daily_bars.sources must be a mapping")
+    for source_code, source_cfg in sources.items():
+        if source_code not in registry.sources:
+            raise RegistryError(f"validation.daily_bars.sources references unknown source {source_code}")
+        if source_cfg.get("declared_basis") not in VALID_PRICE_BASES:
+            raise RegistryError(f"validation source {source_code} has invalid declared_basis {source_cfg.get('declared_basis')}")
+        if "source_field" not in source_cfg:
+            raise RegistryError(f"validation source {source_code} missing source_field")
     for pair in daily_validation["allowed_price_basis_pairs"]:
         if not isinstance(pair, list) or len(pair) != 2:
             raise RegistryError(f"validation allowed_price_basis_pairs entry must be a two-item list: {pair}")
         for basis in pair:
             if basis not in VALID_PRICE_BASES:
                 raise RegistryError(f"validation allowed_price_basis_pairs has invalid basis {basis}")
+    for pair in daily_validation["approved_comparison_pairs"]:
+        if not isinstance(pair, dict):
+            raise RegistryError(f"validation approved_comparison_pairs entry must be a mapping: {pair}")
+        for key in ["primary", "validation", "field", "primary_basis", "validation_basis", "status", "reason"]:
+            if key not in pair:
+                raise RegistryError(f"validation approved_comparison_pairs entry missing {key}")
+        if pair["primary"] not in registry.sources or pair["validation"] not in registry.sources:
+            raise RegistryError(f"validation approved_comparison_pairs references unknown source: {pair}")
+        if pair["primary_basis"] not in VALID_PRICE_BASES or pair["validation_basis"] not in VALID_PRICE_BASES:
+            raise RegistryError(f"validation approved_comparison_pairs has invalid basis: {pair}")
+        if pair["status"] != "approved_for_current_validation":
+            raise RegistryError(f"validation approved_comparison_pairs has unsupported status {pair['status']}")
+        if pair["field"] not in {"close", "volume"}:
+            raise RegistryError(f"validation approved_comparison_pairs has unsupported field {pair['field']}")
     for field in ["close", "volume"]:
         thresholds = daily_validation[field]
         for key in ["match_percent", "minor_difference_percent", "material_difference_percent"]:

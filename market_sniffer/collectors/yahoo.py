@@ -24,7 +24,7 @@ class YahooHistoricalClient:
             raise MissingCredentialError("Install the yahoo extra to use Yahoo historical validation") from exc
         ticker = yf.Ticker(symbol)
         # yfinance end is exclusive for history(); include the requested end date.
-        # auto_adjust=False keeps Close on Yahoo's split-adjusted, non-dividend-adjusted basis.
+        # auto_adjust=False preserves Yahoo's native Close plus separate Adj Close.
         frame = ticker.history(
             start=start.isoformat(),
             end=(end + timedelta(days=1)).isoformat(),
@@ -59,7 +59,7 @@ class YahooHistoricalClient:
                     adjusted_close=Decimal(str(adjusted_close)) if adjusted_close is not None else None,
                     volume=raw["volume"],
                     adjusted=True,
-                    price_basis="split_adjusted",
+                    price_basis="provider_adjusted_unknown",
                 )
             )
         return {"symbol": symbol, "start": start.isoformat(), "end": end.isoformat(), "rows": rows}, bars
@@ -83,7 +83,7 @@ class FixtureYahooHistoricalClient:
                     adjusted_close=base + Decimal("0.25"),
                     volume=1000000 + idx,
                     adjusted=True,
-                    price_basis="split_adjusted",
+                    price_basis="provider_adjusted_unknown",
                 )
             )
         return {"symbol": symbol, "resultsCount": len(bars), "fixture": True}, bars

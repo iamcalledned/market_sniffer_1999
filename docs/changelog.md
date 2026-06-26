@@ -12,3 +12,4 @@
 - Added the simple operator runbook and committed live verification plus 24-month seed evidence.
 - Split Yahoo historical validation configuration from future quote polling with `YAHOO_HISTORICAL_VALIDATION_ENABLED`.
 - Added explicit daily-bar price-basis semantics, registry-driven validation thresholds, `validate-history`, and final Yahoo/Massive validation evidence.
+- Bounded Yahoo semantics with `provider_adjusted_unknown`, added active-vs-legacy validation summaries, and added a corporate-action validation guardrail.

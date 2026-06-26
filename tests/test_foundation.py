@@ -11,6 +11,7 @@ from market_sniffer.collectors.fred import FixtureFredClient, FredApiClient
 from market_sniffer.collectors.massive import FixtureMassiveClient
 from market_sniffer.collectors.yahoo import FixtureYahooQuoteClient, YahooQuoteClient
 from market_sniffer.collectors.yahoo import FixtureYahooHistoricalClient
+from market_sniffer.cli import validation_summary
 from market_sniffer.db import models as m
 from market_sniffer.db.engine import assert_sqlite_pragmas, create_db_engine
 from market_sniffer.db.models import Base
@@ -226,7 +227,8 @@ def test_yahoo_historical_validation_stores_bars_and_does_not_change_canonical(s
     assert len(yahoo_bars) == 3
     assert len(canonical) == 3
     assert all(row.canonical_source_id == massive_source.id for row in canonical)
-    assert {row.price_basis for row in massive_bars + yahoo_bars} == {"split_adjusted"}
+    assert {row.price_basis for row in massive_bars} == {"split_adjusted"}
+    assert {row.price_basis for row in yahoo_bars} == {"provider_adjusted_unknown"}
     assert {row.price_basis for row in canonical} == {"split_adjusted"}
     assert {row.field_name for row in discrepancies} == {"close", "volume"}
     assert {row.status for row in discrepancies} == {"match"}
@@ -272,18 +274,19 @@ def test_yahoo_discrepancy_classification_material_and_not_comparable(session):
             **registry.validation,
             "daily_bars": {
                 **registry.validation["daily_bars"],
-                "source_price_basis": {"massive": "raw", "yahoo": "split_adjusted"},
-                "allowed_price_basis_pairs": [["split_adjusted", "split_adjusted"]],
+                "source_price_basis": {"massive": "raw", "yahoo": "provider_adjusted_unknown"},
+                "approved_comparison_pairs": [],
             },
         },
     )
     service = BackfillService(session, incompatible_registry, FixtureFredClient(), FixtureMassiveClient())
-    yahoo_bar = DailyBar(massive_bar.trade_date, Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100, price_basis="split_adjusted")
+    yahoo_bar = DailyBar(massive_bar.trade_date, Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100, price_basis="provider_adjusted_unknown")
     service._compare_yahoo_bar("SPY", massive_bar.trade_date, yahoo_bar, payload.id, collector_run_id=None)
     discrepancy = session.scalar(select(m.SourceDiscrepancy).where(m.SourceDiscrepancy.field_name == "close"))
     assert discrepancy.status == "not_comparable"
     assert discrepancy.details["primary_price_basis"] == "raw"
-    assert discrepancy.details["validation_price_basis"] == "split_adjusted"
+    assert discrepancy.details["validation_price_basis"] == "provider_adjusted_unknown"
+    assert discrepancy.details["comparison_eligible"] is False
 
 
 def test_rule_version_results_are_not_confused(session):
@@ -305,10 +308,10 @@ def test_rule_version_results_are_not_confused(session):
         payload,
         DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100).asdict(),
     )
-    yahoo_bar = DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100)
+    yahoo_bar = DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100, price_basis="provider_adjusted_unknown")
     service._compare_yahoo_bar("SPY", date(2026, 1, 2), yahoo_bar, payload.id, collector_run_id=None)
     rows = session.scalars(select(m.SourceDiscrepancy).where(m.SourceDiscrepancy.field_name == "close")).all()
-    assert {row.comparison_rule_version for row in rows} == {"validation_v1", "daily_bar_validation_v2"}
+    assert {row.comparison_rule_version for row in rows} == {"validation_v1", "daily_bar_validation_v3"}
     assert {row.status for row in rows} == {"not_comparable", "match"}
 
 
@@ -331,6 +334,71 @@ def test_validate_history_idempotent_and_preserves_canonical(session):
     assert rerun_counts["source_discrepancies"] == counts["source_discrepancies"]
     assert first["SPY"]["match"] == 6
     assert first["QQQ"]["match"] == 6
+
+
+def test_validation_summary_current_excludes_legacy_and_all_rules_labels_it(session):
+    repo = WarehouseRepository(session)
+    payload = repo.raw_payload("massive", "fixture", {"symbol": "SPY"}, {"source": "massive"})
+    repo.record_discrepancy(
+        "SPY",
+        date(2026, 1, 2),
+        "massive",
+        "yahoo",
+        "close",
+        "not_comparable",
+        comparison_rule_version="validation_v1",
+    )
+    service = BackfillService(session, load_registry(), FixtureFredClient(), FixtureMassiveClient())
+    repo.insert_daily_bar(
+        "SPY",
+        "massive",
+        payload,
+        DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100).asdict(),
+    )
+    yahoo_bar = DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100, price_basis="provider_adjusted_unknown")
+    service._compare_yahoo_bar("SPY", date(2026, 1, 2), yahoo_bar, payload.id, collector_run_id=None)
+    current = validation_summary(session, load_registry(), current=True, symbols=["SPY"])
+    all_rules = validation_summary(session, load_registry(), current=False, symbols=["SPY"])
+    assert current["active_rule_version"] == "daily_bar_validation_v3"
+    assert current["counts_by_status"]["not_comparable"] == 0
+    assert current["legacy_audit_row_count"] == 1
+    assert "validation_v1" not in current["counts_by_rule"]
+    assert all_rules["counts_by_rule"]["validation_v1"]["not_comparable"] == 1
+    assert all_rules["counts_by_rule"]["daily_bar_validation_v3"]["match"] == 2
+
+
+def test_current_material_discrepancy_remains_visible(session):
+    repo = WarehouseRepository(session)
+    payload = repo.raw_payload("massive", "fixture", {"symbol": "SPY"}, {"source": "massive"})
+    service = BackfillService(session, load_registry(), FixtureFredClient(), FixtureMassiveClient())
+    repo.insert_daily_bar(
+        "SPY",
+        "massive",
+        payload,
+        DailyBar(date(2026, 1, 2), Decimal("100"), Decimal("101"), Decimal("99"), Decimal("100"), Decimal("100"), 100).asdict(),
+    )
+    yahoo_bar = DailyBar(date(2026, 1, 2), Decimal("130"), Decimal("131"), Decimal("129"), Decimal("130"), Decimal("130"), 200, price_basis="provider_adjusted_unknown")
+    service._compare_yahoo_bar("SPY", date(2026, 1, 2), yahoo_bar, payload.id, collector_run_id=None)
+    current = validation_summary(session, load_registry(), current=True, symbols=["SPY"])
+    assert current["counts_by_status"]["material_difference"] == 2
+
+
+def test_corporate_action_guardrail_records_review_event(session):
+    repo = WarehouseRepository(session)
+    payload = repo.raw_payload("massive", "corporate_actions", {"symbol": "SPY"}, {"fixture": True})
+    assert repo.insert_corporate_action(
+        "SPY",
+        "massive",
+        payload,
+        {"action_type": "split", "ex_date": "2026-01-03", "source_action_id": "split-1", "amount": None},
+    )
+    service = BackfillService(
+        session, load_registry(), FixtureFredClient(), FixtureMassiveClient(), validation_client=FixtureYahooHistoricalClient()
+    )
+    service.validate_history(["SPY"], date(2026, 1, 2), date(2026, 1, 6))
+    events = session.scalars(select(m.DataQualityEvent).where(m.DataQualityEvent.event_type == "validation_adjustment_review")).all()
+    assert len(events) == 1
+    assert events[0].details["corporate_action_count"] == 1
 
 
 def test_dynamic_24_calendar_month_window():
@@ -379,9 +447,10 @@ def test_future_quote_polling_disabled_by_default():
     assert registry.profiles["future_realtime_quote_watchlist"]["enabled_by_default"] is False
     assert registry.sources["yahoo"]["enabled"] is True
     assert registry.sources["yahoo"]["future_quote_capability"] is True
-    assert registry.validation["daily_bars"]["comparison_rule_version"] == "daily_bar_validation_v2"
+    assert registry.validation["daily_bars"]["comparison_rule_version"] == "daily_bar_validation_v3"
     assert registry.validation["daily_bars"]["source_price_basis"]["massive"] == "split_adjusted"
-    assert registry.validation["daily_bars"]["source_price_basis"]["yahoo"] == "split_adjusted"
+    assert registry.validation["daily_bars"]["source_price_basis"]["yahoo"] == "provider_adjusted_unknown"
+    assert registry.validation["daily_bars"]["sources"]["yahoo"]["adjusted_close_field"] == "Adj Close"
 
 
 def test_yahoo_historical_validation_flag_is_separate_from_quotes(monkeypatch):
@@ -480,3 +549,20 @@ def test_registry_validation_failures():
     )
     with pytest.raises(RegistryError):
         validate_registry(bad_pair)
+    bad_approval = Registry(
+        sources=registry.sources,
+        series=registry.series,
+        instruments=registry.instruments,
+        profiles=registry.profiles,
+        validation={
+            **registry.validation,
+            "daily_bars": {
+                **registry.validation["daily_bars"],
+                "approved_comparison_pairs": [
+                    {**registry.validation["daily_bars"]["approved_comparison_pairs"][0], "status": "always_trust"}
+                ],
+            },
+        },
+    )
+    with pytest.raises(RegistryError):
+        validate_registry(bad_approval)

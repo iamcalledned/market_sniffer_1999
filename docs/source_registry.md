@@ -24,4 +24,4 @@ Role: validation/enrichment now; future quote option only when explicitly enable
 
 Daily market source precedence: validation/fallback only. Fallback is disabled unless a registry/profile explicitly allows it.
 
-Historical validation uses `yfinance` when `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. Current Yahoo validation calls `history(..., auto_adjust=False, actions=True)`, stores Close/OHLCV as `split_adjusted`, preserves `Adj Close` separately, compares only compatible price bases against Massive/Polygon, and classifies results as match, minor difference, material difference, not comparable, or validation unavailable.
+Historical validation uses `yfinance` when `YAHOO_ENABLED=true` and `YAHOO_HISTORICAL_VALIDATION_ENABLED=true`. Current Yahoo validation calls `history(..., auto_adjust=False, actions=True)`, stores `Close` as provider-native `provider_adjusted_unknown`, preserves `Adj Close` separately, compares only approved source/field pairs against Massive/Polygon, and classifies results as match, minor difference, material difference, not comparable, or validation unavailable.

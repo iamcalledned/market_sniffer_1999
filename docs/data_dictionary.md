@@ -33,4 +33,4 @@ Raw payload retention classes are `indefinite`, `quote`, `intraday`, and `valida
 
 Yahoo validation bars remain source-specific in `market_bars_daily`. They do not update `canonical_market_bars_daily`; comparisons are stored in `source_discrepancies`.
 
-Daily bar price basis values are controlled: `raw`, `split_adjusted`, `total_return_adjusted`, `provider_adjusted_unknown`, and `unknown`. Normal Massive/Polygon and current Yahoo validation bars are `split_adjusted`.
+Daily bar price basis values are controlled: `raw`, `split_adjusted`, `total_return_adjusted`, `provider_adjusted_unknown`, and `unknown`. Normal Massive/Polygon bars are `split_adjusted`. Current Yahoo validation `Close` rows are `provider_adjusted_unknown`; compatibility is determined by the active validation policy, not by treating Yahoo as canonical.

@@ -48,13 +48,45 @@ validation:
   daily_bars:
     historical_validation_enabled_env: YAHOO_HISTORICAL_VALIDATION_ENABLED
     sample_symbols: ["SPY", "QQQ", "TLT", "NVDA"]
-    comparison_rule_version: "daily_bar_validation_v2"
+    comparison_rule_version: "daily_bar_validation_v3"
     source_price_basis:
       massive: split_adjusted
-      yahoo: split_adjusted
+      yahoo: provider_adjusted_unknown
+    sources:
+      massive:
+        source_field: "provider_adjusted_aggregate"
+        declared_basis: split_adjusted
+        basis_confidence: "provider_request_defined"
+        request:
+          adjusted: true
+      yahoo:
+        source_field: "Close"
+        declared_basis: provider_adjusted_unknown
+        basis_confidence: "provider_native_unverified"
+        adjusted_close_field: "Adj Close"
+        request:
+          auto_adjust: false
+          actions: true
     allowed_price_basis_pairs:
       - ["split_adjusted", "split_adjusted"]
       - ["raw", "raw"]
+    approved_comparison_pairs:
+      - primary: massive
+        validation: yahoo
+        field: close
+        primary_basis: split_adjusted
+        validation_basis: provider_adjusted_unknown
+        comparison_basis: observed_compatible_provider_close
+        status: approved_for_current_validation
+        reason: "Observed SPY/QQQ compatibility under v2; revalidate after major provider/library changes or corporate-action events."
+      - primary: massive
+        validation: yahoo
+        field: volume
+        primary_basis: split_adjusted
+        validation_basis: provider_adjusted_unknown
+        comparison_basis: observed_compatible_volume
+        status: approved_for_current_validation
+        reason: "Observed SPY/QQQ compatibility under v2; revalidate after major provider/library changes or corporate-action events."
     close:
       match_percent: 0.000001
       minor_difference_percent: 0.002
